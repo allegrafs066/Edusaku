@@ -11,6 +11,7 @@ import type { RootStackParamList } from '../../App';
 import { useColors } from '../theme/colors';
 import { Typography } from '../theme/typography';
 import ProgressBar from '../components/ProgressBar';
+import { useAppStore } from '../store/appStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ const STEP_DURATION = 900; // ms between steps (simulated for UI demo)
 
 export default function OnboardingScreen({ navigation }: Props) {
   const colors = useColors();
+  const setOnboardingComplete = useAppStore((s) => s.setOnboardingComplete);
 
   const [stepIndex, setStepIndex] = useState(0);
   const isDone = stepIndex >= STEPS.length - 1;
@@ -100,7 +102,10 @@ export default function OnboardingScreen({ navigation }: Props) {
       <Animated.View style={[styles.buttonWrapper, { opacity: buttonOpacity }]}>
         <TouchableOpacity
           style={[styles.button, { backgroundColor: colors.primary }]}
-          onPress={() => navigation.replace('Home')}
+          onPress={() => {
+            setOnboardingComplete();
+            navigation.replace('Home');
+          }}
           disabled={!isDone}
           accessibilityRole="button"
           accessibilityLabel="Get started"
