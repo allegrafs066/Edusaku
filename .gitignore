@@ -1,2 +1,67 @@
-node_modules
-android
+# ─── Dependencies ────────────────────────────────────────────────────────────
+node_modules/
+
+# ─── Expo / Metro ─────────────────────────────────────────────────────────────
+.expo/
+dist/
+web-build/
+.metro-health-check*
+
+# ─── Android ──────────────────────────────────────────────────────────────────
+android/build/
+android/app/build/
+android/app/.cxx/                 # CMake intermediate files
+android/.gradle/
+android/local.properties          # machine-specific SDK path — never commit
+android/captures/
+android/app/release/              # signed APKs / AABs
+*.apk
+*.aab
+*.keystore                        # signing keys — NEVER commit
+*.jks                             # signing keys — NEVER commit
+debug.keystore                    # debug signing key — regenerated automatically
+
+# ─── iOS ──────────────────────────────────────────────────────────────────────
+ios/build/
+ios/Pods/
+ios/.xcode.env.local              # machine-specific Xcode env
+ios/DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/
+*.ipa
+
+# ─── Environment / secrets ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example                     # allow the example template
+*.pem
+*.p8
+*.p12
+secrets/
+google-services.json              # Firebase config with API keys
+GoogleService-Info.plist          # Firebase iOS config
+
+# ─── Editor ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ─── TypeScript / JS build output ────────────────────────────────────────────
+lib/
+build/
+coverage/
+.tsbuildinfo
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+build.log
+
+# ─── Misc ─────────────────────────────────────────────────────────────────────
+.buck/
+buck-out/
