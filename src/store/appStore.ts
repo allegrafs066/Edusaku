@@ -63,10 +63,13 @@ interface UISlice {
   isInferring: boolean;
   isEmbedding: boolean;
   isUploadingPDF: boolean;
+  /** True after the user taps "Get Started" on OnboardingScreen. Persisted. */
+  hasCompletedOnboarding: boolean;
 
   setInferring: (v: boolean) => void;
   setEmbedding: (v: boolean) => void;
   setUploadingPDF: (v: boolean) => void;
+  setOnboardingComplete: () => void;
 }
 
 type AppStore = DocumentSlice & ChatSlice & UISlice;
@@ -131,10 +134,12 @@ export const useAppStore = create<AppStore>()(
       isInferring: false,
       isEmbedding: false,
       isUploadingPDF: false,
+      hasCompletedOnboarding: false,
 
       setInferring: (v) => set({ isInferring: v }),
       setEmbedding: (v) => set({ isEmbedding: v }),
       setUploadingPDF: (v) => set({ isUploadingPDF: v }),
+      setOnboardingComplete: () => set({ hasCompletedOnboarding: true }),
     }),
     {
       name: 'edusaku-store',
@@ -144,6 +149,7 @@ export const useAppStore = create<AppStore>()(
         documents: s.documents,
         activeDocumentId: s.activeDocumentId,
         sessions: s.sessions,
+        hasCompletedOnboarding: s.hasCompletedOnboarding,
       }),
     },
   ),
