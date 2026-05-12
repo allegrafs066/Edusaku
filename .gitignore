@@ -1,4 +1,4 @@
-# ─── Dependencies ────────────────────────────────────────────────────────────
+# ─── Dependencies ─────────────────────────────────────────────────────────────
 node_modules/
 
 # ─── Expo / Metro ─────────────────────────────────────────────────────────────
@@ -10,21 +10,27 @@ web-build/
 # ─── Android ──────────────────────────────────────────────────────────────────
 android/build/
 android/app/build/
-android/app/.cxx/                 # CMake intermediate files
+# CMake intermediate files
+android/app/.cxx/
 android/.gradle/
-android/local.properties          # machine-specific SDK path — never commit
+# Machine-specific SDK path — never commit
+android/local.properties
 android/captures/
-android/app/release/              # signed APKs / AABs
+# Signed APKs / AABs
+android/app/release/
 *.apk
 *.aab
-*.keystore                        # signing keys — NEVER commit
-*.jks                             # signing keys — NEVER commit
-debug.keystore                    # debug signing key — regenerated automatically
+# Signing keys — NEVER commit
+*.keystore
+*.jks
+# Debug signing key — regenerated automatically
+debug.keystore
 
 # ─── iOS ──────────────────────────────────────────────────────────────────────
 ios/build/
 ios/Pods/
-ios/.xcode.env.local              # machine-specific Xcode env
+# Machine-specific Xcode env
+ios/.xcode.env.local
 ios/DerivedData/
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
@@ -34,13 +40,14 @@ ios/DerivedData/
 # ─── Environment / secrets ────────────────────────────────────────────────────
 .env
 .env.*
-!.env.example                     # allow the example template
+!.env.example
 *.pem
 *.p8
 *.p12
 secrets/
-google-services.json              # Firebase config with API keys
-GoogleService-Info.plist          # Firebase iOS config
+# Firebase config with API keys
+google-services.json
+GoogleService-Info.plist
 
 # ─── Editor ───────────────────────────────────────────────────────────────────
 .vscode/
@@ -49,7 +56,7 @@ GoogleService-Info.plist          # Firebase iOS config
 .DS_Store
 Thumbs.db
 
-# ─── TypeScript / JS build output ────────────────────────────────────────────
+# ─── TypeScript / JS build output ─────────────────────────────────────────────
 lib/
 build/
 coverage/
