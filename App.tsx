@@ -15,9 +15,18 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Home: undefined;
   Chat: { documentId: string };
+  Connection: undefined;
+  Camera: undefined;
+  Upload: { imageUri: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+// ─── Custom screens ──────────────────────────────────────────────────────────
+
+import ConnectionScreen from './src/screens/ConnectionScreen';
+import CameraScreen from './src/screens/CameraScreen';
+import UploadScreen from './src/screens/UploadScreen';
 
 // ─── Custom nav themes ────────────────────────────────────────────────────────
 
@@ -127,6 +136,21 @@ export default function App() {
           options={({ route }) => ({
             title: route.params?.documentId ? 'Ask Document' : 'Chat',
           })}
+        />
+        <Stack.Screen
+          name="Connection"
+          component={ConnectionScreen}
+          options={{ title: 'Connect to PC' }}
+        />
+        <Stack.Screen
+          name="Camera"
+          component={CameraScreen}
+          options={{ title: 'Capture Document' }}
+        />
+        <Stack.Screen
+          name="Upload"
+          component={UploadScreen}
+          options={{ title: 'Upload' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
