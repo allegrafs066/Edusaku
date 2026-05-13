@@ -78,7 +78,10 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     aaptOptions {
-        noCompress 'gguf'
+        // .gguf model files are NOT bundled in the APK (ZIP32 4GB limit).
+        // Model is loaded from external storage at runtime.
+        // noCompress kept here in case smaller test models are added during dev.
+        noCompress 'gguf', 'bin', 'tflite'
     }
 
     packagingOptions {
