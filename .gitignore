@@ -10,6 +10,8 @@ web-build/
 # ─── Android ──────────────────────────────────────────────────────────────────
 android/build/
 android/app/build/
+# ML models & GGML libs
+android/app/src/main/assets/
 # CMake intermediate files
 android/app/.cxx/
 android/.gradle/
