@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useLayoutEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   Alert,
+  TouchableOpacity,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
@@ -23,6 +24,21 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 export default function HomeScreen({ navigation }: Props) {
   const colors = useColors();
   const { documents, setActiveDocument, isUploadingPDF } = useAppStore();
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Connection')}
+          style={styles.headerButton}
+        >
+          <Text style={[styles.headerButtonText, { color: colors.primary }]}>Connect PC</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, colors]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -95,11 +111,20 @@ export default function HomeScreen({ navigation }: Props) {
         />
       )}
 
-      {/* Floating action button */}
-      <PDFUploader
-        onPress={handleUploadPress}
-        loading={isUploadingPDF}
-      />
+      {/* Floating action buttons */}
+      <View style={styles.fabContainer}>
+        <TouchableOpacity
+          style={[styles.cameraFab, { backgroundColor: colors.primary }]}
+          onPress={() => navigation.navigate('Camera')}
+        >
+          <Text style={styles.fabIcon}>📷</Text>
+        </TouchableOpacity>
+        
+        <PDFUploader
+          onPress={handleUploadPress}
+          loading={isUploadingPDF}
+        />
+      </View>
     </View>
   );
 }
@@ -109,6 +134,13 @@ export default function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerButton: {
+    marginRight: 8,
+  },
+  headerButtonText: {
+    fontWeight: '600',
+    fontSize: 14,
   },
   // Empty state
   emptyState: {
@@ -145,5 +177,28 @@ const styles = StyleSheet.create({
   },
   listFooter: {
     height: 96, // clears the FAB (56 + 28 bottom + buffer)
+  },
+  fabContainer: {
+    position: 'absolute',
+    bottom: 28,
+    right: 28,
+    flexDirection: 'column',
+    gap: 16,
+    alignItems: 'center',
+  },
+  cameraFab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  fabIcon: {
+    fontSize: 24,
   },
 });
