@@ -13,7 +13,10 @@ buildscript {
         maven { url 'https://repo.spring.io/libs-milestone/' }
     }
     dependencies {
-        classpath("com.android.tools.build:gradle")
+        // Explicitly pin AGP to 8.7.3 to fix "Required array size too large"
+        // error when compressing large assets (e.g. .gguf model files > 2GB).
+        // This overrides the version injected by the React Native Gradle Plugin BOM.
+        classpath('com.android.tools.build:gradle:8.13.2')
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
     }
