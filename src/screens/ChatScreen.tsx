@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  Alert,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
@@ -16,6 +17,8 @@ import { useColors } from '../theme/colors';
 import { Typography } from '../theme/typography';
 import { useAppStore, type ChatMessage } from '../store/appStore';
 import ChatBubble from '../components/ChatBubble';
+import { askDocument } from '../services/rag';
+import { loadModel } from '../services/inference';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,7 +120,16 @@ export default function ChatScreen({ route }: Props) {
   const document = documents.find((d) => d.id === documentId);
 
   const [input, setInput] = useState('');
+  // Holds the streamed partial response while the model is generating
+  const [streamingText, setStreamingText] = useState('');
   const listRef = useRef<FlatList<ChatMessage>>(null);
+
+  // Pre-load model when screen mounts so first response is faster
+  useEffect(() => {
+    loadModel().catch((err) =>
+      console.warn('[Edusaku] Model preload failed:', err),
+    );
+  }, []);
 
   // Scroll to bottom whenever messages change
   useEffect(() => {
@@ -128,11 +140,11 @@ export default function ChatScreen({ route }: Props) {
 
   // ── Send handler ─────────────────────────────────────────────────────────
 
-  function handleSend() {
+  async function handleSend() {
     const trimmed = input.trim();
     if (!trimmed || isInferring) return;
 
-    // Append user message
+    // Append user message to store
     appendMessage(documentId, {
       id: Date.now().toString(),
       role: 'user',
@@ -141,21 +153,43 @@ export default function ChatScreen({ route }: Props) {
     });
 
     setInput('');
+    setStreamingText('');
     setInferring(true);
 
-    // Backend engineer replaces this stub with real RAG inference.
-    // When done, call appendMessage with role:'assistant' and set setInferring(false).
-    // Stub: simulate a short delay then echo a placeholder response.
-    setTimeout(() => {
+    try {
+      // Grab the current history BEFORE we appended (for context)
+      const history = session?.messages ?? [];
+      const filePath = document?.filePath ?? '';
+
+      const answer = await askDocument(
+        documentId,
+        filePath,
+        history,
+        trimmed,
+        // Streaming: update the temporary streaming text token by token
+        (token) => {
+          setStreamingText((prev) => prev + token);
+          listRef.current?.scrollToEnd({ animated: false });
+        },
+      );
+
+      // Commit the final answer to the persistent store
+      setStreamingText('');
       appendMessage(documentId, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'This answer will come from the on-device Gemma model. (Backend integration pending.)',
-        sourceChunks: ['page-1-chunk-0'],
+        content: answer,
         createdAt: new Date().toISOString(),
       });
+    } catch (err: any) {
+      setStreamingText('');
+      Alert.alert(
+        'Error',
+        err?.message ?? 'Failed to generate a response. Please try again.',
+      );
+    } finally {
       setInferring(false);
-    }, 1800);
+    }
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -183,8 +217,14 @@ export default function ChatScreen({ route }: Props) {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
-          // Typing indicator appended after last message
-          ListFooterComponent={isInferring ? <TypingIndicator /> : null}
+          // Show streaming text bubble OR typing indicator while inferring
+          ListFooterComponent={
+            isInferring
+              ? streamingText
+                ? <ChatBubble role="assistant" content={streamingText} sourcePage={null} />
+                : <TypingIndicator />
+              : null
+          }
           renderItem={({ item }) => (
             <ChatBubble
               role={item.role}
