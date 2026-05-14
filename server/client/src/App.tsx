@@ -275,8 +275,8 @@ const App: React.FC = () => {
 
       {/* ── Header ── */}
       <header className={`h-14 flex items-center justify-between px-4 border-b shadow-sm sticky top-0 z-40 ${headerBg}`}>
-        <div className="flex items-center gap-3">
-          {/* Sidebar toggle — only shown when sidebar is closed */}
+        {/* Left: sidebar toggle + logo */}
+        <div className="flex items-center gap-3 z-10">
           {!sidebarOpen && (
             <button
               onClick={() => setSidebarOpen(true)}
@@ -286,7 +286,6 @@ const App: React.FC = () => {
               <PanelLeft size={20} />
             </button>
           )}
-
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center">
               <HardDrive size={15} className="text-white" />
@@ -295,12 +294,17 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {activeSession && activeSession.title !== 'New Chat' && (
-            <span className="hidden md:block text-sm text-white/70 max-w-xs truncate">
+        {/* Center: active session title — absolutely centered */}
+        {activeSession && activeSession.title !== 'New Chat' && (
+          <div className="absolute left-0 right-0 flex justify-center pointer-events-none">
+            <span className="text-sm font-medium text-white/80 max-w-xs truncate px-4 text-center">
               {activeSession.title}
             </span>
-          )}
+          </div>
+        )}
+
+        {/* Right: dark mode toggle */}
+        <div className="flex items-center gap-2 z-10">
           <button
             onClick={() => setDark((v) => !v)}
             className="p-2 rounded-xl hover:bg-white/10 transition-colors text-white"
