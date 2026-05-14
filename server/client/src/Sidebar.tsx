@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Smartphone, Upload, FileImage, RefreshCcw, Plus,
   MessageSquare, X, MoreHorizontal, Trash2, PanelLeftClose,
-  MoreVertical, Pencil, Check,
+  MoreVertical, Pencil, Check, AlertTriangle,
 } from 'lucide-react';
 
 interface UploadFile {
@@ -52,6 +52,57 @@ const getFileExt = (filename: string) => {
   return ext.length > 4 ? 'FILE' : ext;
 };
 
+// ── Confirm Dialog ────────────────────────────────────────────────────────────
+
+export const ConfirmDialog: React.FC<{
+  dark: boolean;
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ dark, title, message, onConfirm, onCancel }) => (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+    <div className={`relative z-10 w-full max-w-sm rounded-3xl shadow-2xl border p-6 ${
+      dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200'
+    }`}>
+      <div className="flex items-start gap-4 mb-5">
+        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+          dark ? 'bg-red-900/40' : 'bg-red-50'
+        }`}>
+          <AlertTriangle size={20} className="text-red-500" />
+        </div>
+        <div>
+          <h3 className={`font-bold text-base mb-1 ${dark ? 'text-white' : 'text-slate-800'}`}>
+            {title}
+          </h3>
+          <p className={`text-sm leading-relaxed ${dark ? 'text-gray-400' : 'text-slate-500'}`}>
+            {message}
+          </p>
+        </div>
+      </div>
+      <div className="flex gap-3">
+        <button
+          onClick={onCancel}
+          className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-colors border ${
+            dark
+              ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
+              : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          className="flex-1 py-2.5 rounded-2xl text-sm font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
 // ── All Documents Modal ───────────────────────────────────────────────────────
 
 const AllDocsModal: React.FC<{
@@ -59,78 +110,92 @@ const AllDocsModal: React.FC<{
   uploads: UploadFile[];
   onDelete: (filename: string) => void;
   onClose: () => void;
-}> = ({ dark, uploads, onDelete, onClose }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-    <div className={`relative z-10 w-full max-w-md rounded-3xl shadow-2xl border overflow-hidden ${
-      dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200'
-    }`}>
-      <div className={`flex items-center justify-between px-6 py-4 border-b ${
-        dark ? 'border-gray-700' : 'border-slate-100'
+}> = ({ dark, uploads, onDelete, onClose }) => {
+  const [confirmFile, setConfirmFile] = useState<string | null>(null);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className={`relative z-10 w-full max-w-md rounded-3xl shadow-2xl border overflow-hidden ${
+        dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200'
       }`}>
-        <h3 className={`font-bold text-base ${dark ? 'text-white' : 'text-slate-800'}`}>
-          All Documents ({uploads.length})
-        </h3>
-        <button
-          onClick={onClose}
-          className={`p-1.5 rounded-full transition-colors ${
-            dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-100 text-slate-500'
-          }`}
-        >
-          <X size={16} />
-        </button>
-      </div>
-      <div className="overflow-y-auto max-h-96 p-4 space-y-2">
-        {uploads.map((file, i) => (
-          <div
-            key={i}
-            className={`flex items-center gap-3 p-3 rounded-2xl border transition-all group ${
-              dark ? 'border-gray-700 hover:border-gray-600' : 'border-slate-100 hover:border-slate-200'
+        <div className={`flex items-center justify-between px-6 py-4 border-b ${
+          dark ? 'border-gray-700' : 'border-slate-100'
+        }`}>
+          <h3 className={`font-bold text-base ${dark ? 'text-white' : 'text-slate-800'}`}>
+            All Documents ({uploads.length})
+          </h3>
+          <button
+            onClick={onClose}
+            className={`p-1.5 rounded-full transition-colors ${
+              dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-100 text-slate-500'
             }`}
           >
-            <a
-              href={`/uploads/${file.name}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-3 flex-1 min-w-0 no-underline"
-            >
-              <div className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border ${
-                dark ? 'bg-gray-800 border-gray-600' : 'bg-slate-100 border-slate-200'
-              }`}>
-                {isImage(file.name) ? (
-                  <img src={`/uploads/${file.name}`} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <span className={`text-[10px] font-bold ${dark ? 'text-gray-400' : 'text-slate-500'}`}>
-                    {getFileExt(file.name)}
-                  </span>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className={`text-sm font-medium truncate ${dark ? 'text-gray-200' : 'text-slate-700'}`}>
-                  {getDisplayName(file.name)}
-                </p>
-                <p className={`text-[11px] mt-0.5 ${dark ? 'text-gray-500' : 'text-slate-400'}`}>
-                  {new Date(file.timestamp).toLocaleString('id-ID', {
-                    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                  })}
-                </p>
-              </div>
-            </a>
-            <button
-              onClick={() => onDelete(file.name)}
-              className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
-                dark ? 'hover:bg-red-900/40 text-red-400' : 'hover:bg-red-50 text-red-500'
+            <X size={16} />
+          </button>
+        </div>
+        <div className="overflow-y-auto max-h-96 p-4 space-y-2">
+          {uploads.map((file, i) => (
+            <div
+              key={i}
+              className={`flex items-center gap-3 p-3 rounded-2xl border transition-all group ${
+                dark ? 'border-gray-700 hover:border-gray-600' : 'border-slate-100 hover:border-slate-200'
               }`}
-              title="Delete document"
             >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
+              <a
+                href={`/uploads/${file.name}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-3 flex-1 min-w-0 no-underline"
+              >
+                <div className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border ${
+                  dark ? 'bg-gray-800 border-gray-600' : 'bg-slate-100 border-slate-200'
+                }`}>
+                  {isImage(file.name) ? (
+                    <img src={`/uploads/${file.name}`} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className={`text-[10px] font-bold ${dark ? 'text-gray-400' : 'text-slate-500'}`}>
+                      {getFileExt(file.name)}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium truncate ${dark ? 'text-gray-200' : 'text-slate-700'}`}>
+                    {getDisplayName(file.name)}
+                  </p>
+                  <p className={`text-[11px] mt-0.5 ${dark ? 'text-gray-500' : 'text-slate-400'}`}>
+                    {new Date(file.timestamp).toLocaleString('id-ID', {
+                      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                    })}
+                  </p>
+                </div>
+              </a>
+              <button
+                onClick={() => setConfirmFile(file.name)}
+                className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                  dark ? 'hover:bg-red-900/40 text-red-400' : 'hover:bg-red-50 text-red-500'
+                }`}
+                title="Delete document"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {confirmFile && (
+        <ConfirmDialog
+          dark={dark}
+          title="Delete Document"
+          message={`"${getDisplayName(confirmFile)}" will be permanently deleted.`}
+          onConfirm={() => { onDelete(confirmFile); setConfirmFile(null); }}
+          onCancel={() => setConfirmFile(null)}
+        />
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 // ── Chat session row with context menu ────────────────────────────────────────
 
@@ -147,10 +212,10 @@ const ChatRow: React.FC<{
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.title);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Close menu on outside click
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
@@ -162,7 +227,6 @@ const ChatRow: React.FC<{
     return () => document.removeEventListener('mousedown', handler);
   }, [menuOpen]);
 
-  // Focus input when editing starts
   useEffect(() => {
     if (editing) inputRef.current?.focus();
   }, [editing]);
@@ -174,87 +238,96 @@ const ChatRow: React.FC<{
   };
 
   return (
-    <div className={`group relative flex items-center rounded-xl transition-all ${
-      isActive
-        ? (dark ? 'bg-blue-900/50' : 'bg-blue-50')
-        : hoverBg
-    }`}>
-      {editing ? (
-        <div className="flex items-center gap-1.5 flex-1 px-3 py-2">
-          <MessageSquare size={14} className="shrink-0 opacity-40" />
-          <input
-            ref={inputRef}
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename();
-              if (e.key === 'Escape') { setEditing(false); setEditValue(session.title); }
-            }}
-            onBlur={commitRename}
-            className={`flex-1 text-xs font-medium bg-transparent outline-none border-b ${
-              dark ? 'text-white border-blue-400' : 'text-slate-800 border-blue-500'
-            }`}
-          />
-          <button onClick={commitRename} className="text-blue-500">
-            <Check size={13} />
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={onSelect}
-          className="flex items-center gap-2.5 px-3 py-2.5 flex-1 min-w-0 text-left"
-        >
-          <MessageSquare size={14} className={`shrink-0 opacity-60 ${isActive ? (dark ? 'text-blue-300' : 'text-blue-600') : ''}`} />
-          <div className="flex-1 min-w-0">
-            <p className={`text-xs font-medium truncate ${
-              isActive ? (dark ? 'text-blue-300' : 'text-blue-700') : (dark ? 'text-gray-300' : 'text-slate-700')
-            }`}>{session.title}</p>
-            <p className={`text-[10px] mt-0.5 ${sub}`}>
-              {new Date(session.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}
-            </p>
+    <>
+      <div className={`group relative flex items-center rounded-xl transition-all ${
+        isActive ? (dark ? 'bg-blue-900/50' : 'bg-blue-50') : hoverBg
+      }`}>
+        {editing ? (
+          <div className="flex items-center gap-1.5 flex-1 px-3 py-2">
+            <MessageSquare size={14} className="shrink-0 opacity-40" />
+            <input
+              ref={inputRef}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') { setEditing(false); setEditValue(session.title); }
+              }}
+              onBlur={commitRename}
+              className={`flex-1 text-xs font-medium bg-transparent outline-none border-b ${
+                dark ? 'text-white border-blue-400' : 'text-slate-800 border-blue-500'
+              }`}
+            />
+            <button onClick={commitRename} className="text-blue-500">
+              <Check size={13} />
+            </button>
           </div>
-        </button>
-      )}
-
-      {/* 3-dot menu button */}
-      {!editing && (
-        <div className="relative pr-1.5" ref={menuRef}>
+        ) : (
           <button
-            onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
-            className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
-              dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-200 text-slate-500'
-            } ${menuOpen ? 'opacity-100' : ''}`}
+            onClick={onSelect}
+            className="flex items-center gap-2.5 px-3 py-2.5 flex-1 min-w-0 text-left"
           >
-            <MoreVertical size={13} />
-          </button>
-
-          {menuOpen && (
-            <div className={`absolute right-0 top-8 z-50 w-36 rounded-2xl shadow-xl border overflow-hidden ${
-              dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'
-            }`}>
-              <button
-                onClick={() => { setMenuOpen(false); setEditing(true); setEditValue(session.title); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs transition-colors ${
-                  dark ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-slate-50 text-slate-700'
-                }`}
-              >
-                <Pencil size={13} />
-                Rename
-              </button>
-              <button
-                onClick={() => { setMenuOpen(false); onDelete(); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs transition-colors ${
-                  dark ? 'hover:bg-red-900/40 text-red-400' : 'hover:bg-red-50 text-red-600'
-                }`}
-              >
-                <Trash2 size={13} />
-                Delete
-              </button>
+            <MessageSquare size={14} className={`shrink-0 opacity-60 ${isActive ? (dark ? 'text-blue-300' : 'text-blue-600') : ''}`} />
+            <div className="flex-1 min-w-0">
+              <p className={`text-xs font-medium truncate ${
+                isActive ? (dark ? 'text-blue-300' : 'text-blue-700') : (dark ? 'text-gray-300' : 'text-slate-700')
+              }`}>{session.title}</p>
+              <p className={`text-[10px] mt-0.5 ${sub}`}>
+                {new Date(session.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}
+              </p>
             </div>
-          )}
-        </div>
+          </button>
+        )}
+
+        {!editing && (
+          <div className="relative pr-1.5" ref={menuRef}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+              className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-200 text-slate-500'
+              } ${menuOpen ? 'opacity-100' : ''}`}
+            >
+              <MoreVertical size={13} />
+            </button>
+
+            {menuOpen && (
+              <div className={`absolute right-0 top-8 z-50 w-36 rounded-2xl shadow-xl border overflow-hidden ${
+                dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'
+              }`}>
+                <button
+                  onClick={() => { setMenuOpen(false); setEditing(true); setEditValue(session.title); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs transition-colors ${
+                    dark ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <Pencil size={13} />
+                  Rename
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs transition-colors ${
+                    dark ? 'hover:bg-red-900/40 text-red-400' : 'hover:bg-red-50 text-red-600'
+                  }`}
+                >
+                  <Trash2 size={13} />
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          dark={dark}
+          title="Delete Chat"
+          message={`"${session.title}" and all its messages will be permanently deleted.`}
+          onConfirm={() => { setConfirmDelete(false); onDelete(); }}
+          onCancel={() => setConfirmDelete(false)}
+        />
       )}
-    </div>
+    </>
   );
 };
 
@@ -269,6 +342,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [showAllDocs, setShowAllDocs] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [confirmDocFile, setConfirmDocFile] = useState<string | null>(null);
 
   const topUploads = uploads.slice(0, 3);
 
@@ -286,11 +360,11 @@ const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside className={`
-        fixed top-0 left-0 h-full z-30 w-72 flex flex-col border-r shadow-xl
+        fixed top-14 left-0 z-30 w-72 flex flex-col border-r shadow-xl
         transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         ${base}
-      `}>
+      `} style={{ height: 'calc(100vh - 3.5rem)' }}>
 
         {/* ── Section 1: Connect Device ── */}
         <div className={`px-4 pt-4 pb-4 border-b ${divider}`}>
@@ -389,7 +463,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       </p>
                     </a>
                     <button
-                      onClick={() => onDeleteUpload(file.name)}
+                      onClick={() => setConfirmDocFile(file.name)}
                       className={`p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-all shrink-0 ${
                         dark ? 'hover:bg-red-900/40 text-red-400' : 'hover:bg-red-50 text-red-500'
                       }`}
@@ -473,6 +547,16 @@ const Sidebar: React.FC<SidebarProps> = ({
           uploads={uploads}
           onDelete={onDeleteUpload}
           onClose={() => setShowAllDocs(false)}
+        />
+      )}
+
+      {confirmDocFile && (
+        <ConfirmDialog
+          dark={dark}
+          title="Delete Document"
+          message={`"${getDisplayName(confirmDocFile)}" will be permanently deleted.`}
+          onConfirm={() => { onDeleteUpload(confirmDocFile); setConfirmDocFile(null); }}
+          onCancel={() => setConfirmDocFile(null)}
         />
       )}
     </>
