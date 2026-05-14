@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import QRCode from 'qrcode';
 import { Smartphone, CheckCircle, RefreshCcw, Image as ImageIcon, HardDrive, Send, Bot, User } from 'lucide-react';
 import axios from 'axios';
+import ReactMarkdown from 'react-markdown';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -203,7 +204,35 @@ const App: React.FC = () => {
                       ? 'bg-slate-100 text-slate-800 rounded-tr-none' 
                       : 'bg-blue-50 text-blue-900 border border-blue-100 rounded-tl-none'
                   }`}>
-                    {msg.content}
+                    {msg.role === 'user' ? (
+                      msg.content
+                    ) : (
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                          h1: ({ children }) => <h1 className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-sm font-bold mb-2 mt-3 first:mt-0">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2 first:mt-0">{children}</h3>,
+                          ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                          strong: ({ children }) => <strong className="font-semibold text-blue-900">{children}</strong>,
+                          em: ({ children }) => <em className="italic">{children}</em>,
+                          code: ({ children }) => (
+                            <code className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-xs font-mono">{children}</code>
+                          ),
+                          pre: ({ children }) => (
+                            <pre className="bg-slate-800 text-slate-100 rounded-xl p-3 my-2 overflow-x-auto text-xs font-mono">{children}</pre>
+                          ),
+                          blockquote: ({ children }) => (
+                            <blockquote className="border-l-2 border-blue-300 pl-3 my-2 text-blue-700 italic">{children}</blockquote>
+                          ),
+                          hr: () => <hr className="border-blue-200 my-3" />,
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    )}
                   </div>
                 </div>
               ))
