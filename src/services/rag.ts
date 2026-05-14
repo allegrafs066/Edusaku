@@ -1,138 +1,126 @@
-/**
- * rag.ts
- *
- * Retrieval-Augmented Generation orchestrator for Edusaku.
- *
- * Because Gemma 4 E2B has a 128 K token context window and native document
- * understanding, we use a "full-context" strategy instead of traditional
- * chunk-and-retrieve RAG:
- *
- *   1. Extract the full PDF text once (cached per document).
- *   2. On each user query, build a structured prompt that includes:
- *        - A system instruction telling the model to act as a tutor.
- *        - The full document text as context.
- *        - The conversation history (last N turns).
- *        - The user's latest question.
- *   3. Run inference and return the assistant reply.
- *
- * This is viable for typical educational PDFs (< ~300 pages / ~150 K tokens).
- * If a document is too long we truncate context to the last MAX_CTX_CHARS
- * characters to stay within the model's context window.
- */
+import { v4 as uuidv4 } from "uuid";
+import { extractPdfText } from "./pdfParser";
+import { runInference } from "./inference";
+import { getEmbedding } from "./embedding";
+import { saveDocumentVectors, searchVectors, type VectorChunk } from "./vectorStore";
+import type { ChatMessage } from "../store/appStore";
 
-import { extractPdfText } from './pdfParser';
-import { runInference } from './inference';
-import type { ChatMessage } from '../store/appStore';
+const TOP_K_CHUNKS = 4;
+const MAX_HISTORY_TURNS = 4;
+const CHUNK_SIZE = 1000;
+const CHUNK_OVERLAP = 200;
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+function chunkify(text) {
+  const chunks = [];
+  const segments = text.split(/--- Page \d+ ---\n/);
+  for (let i = 0; i < segments.length; i++) {
+    const pageText = segments[i].trim();
+    if (pageText.length === 0) continue;
+    let start = 0;
+    while (start < pageText.length) {
+      let end = start + CHUNK_SIZE;
+      if (end < pageText.length) {
+        const lastSpace = pageText.lastIndexOf(" ", end);
+        if (lastSpace > start) end = lastSpace;
+      }
+      chunks.push({ text: pageText.slice(start, end).trim(), pageNumber: i + 1 });
+      const nextStart = end - CHUNK_OVERLAP;
+      start = nextStart <= start ? end : nextStart;
+      if (start >= pageText.length - 50) break;
+    }
+  }
+  return chunks;
+}
 
-/** Soft limit on document text passed to the model (~120 K tokens ≈ 480 K chars). */
-const MAX_CTX_CHARS = 480_000;
-
-/** Number of past conversation turns to include for multi-turn context. */
-const MAX_HISTORY_TURNS = 6;
-
-// ─── In-memory document text cache ───────────────────────────────────────────
-
-const _docTextCache: Record<string, string> = {};
-
-// ─── Prompt builder ───────────────────────────────────────────────────────────
-
-/**
- * Build the Gemma 4 instruct-format prompt.
- *
- * Gemma 4 uses the standard <start_of_turn> / <end_of_turn> chat template.
- */
-function buildPrompt(
-  docText: string,
-  history: ChatMessage[],
-  userQuestion: string,
-): string {
-  const systemInstruction = `You are Edusaku, a helpful and patient educational AI tutor. \
-You have been given the full text of a document that the student uploaded. \
-Answer the student's questions based solely on the provided document. \
-If the answer is not in the document, say so honestly. \
-Always cite the page number when referencing specific content (e.g. "According to Page 3, ..."). \
-Be concise, clear, and encouraging.`;
-
-  // Truncate document if needed to stay within context budget
-  const truncatedDoc =
-    docText.length > MAX_CTX_CHARS
-      ? docText.slice(0, MAX_CTX_CHARS) + '\n\n[Document truncated due to length]'
-      : docText;
-
-  // Build history turns (last N user+assistant pairs)
-  const recentHistory = history.slice(-MAX_HISTORY_TURNS * 2);
-  const historyText = recentHistory
-    .map((msg) =>
-      msg.role === 'user'
-        ? `<start_of_turn>user\n${msg.content}<end_of_turn>`
-        : `<start_of_turn>model\n${msg.content}<end_of_turn>`,
-    )
-    .join('\n');
-
-  return (
-    `<start_of_turn>user\n` +
-    `${systemInstruction}\n\n` +
-    `=== DOCUMENT CONTENT ===\n${truncatedDoc}\n=== END OF DOCUMENT ===\n` +
-    `<end_of_turn>\n` +
-    `<start_of_turn>model\nUnderstood. I have read the document and I am ready to answer questions about it.<end_of_turn>\n` +
-    (historyText ? historyText + '\n' : '') +
-    `<start_of_turn>user\n${userQuestion}<end_of_turn>\n` +
-    `<start_of_turn>model\n`
-  );
+function buildPrompt(chunks, overview, history, question) {
+  const system = "You are Edusaku, a helpful and patient educational AI tutor. Answer the student\"s questions based on the provided document segments. If the answer is not in the segments, say so honestly. Always cite the page number when referencing specific content (e.g. \"According to Page 3, ...\"). Be concise, clear, and encouraging.";
+  const overviewText = overview ? "=== DOCUMENT OVERVIEW (Page " + overview.metadata.pageNumber + ") ===\n" + overview.text + "\n\n" : "";
+  const context = chunks.map((c) => "[Page " + c.metadata.pageNumber + "]: " + c.text).join("\n\n");
+  const historyText = history.slice(-MAX_HISTORY_TURNS * 2).map((msg) => {
+    const role = msg.role === "user" ? "user" : "model";
+    return "<start_of_turn>" + role + "\n" + msg.content + "<end_of_turn>";
+  }).join("\n");
+  return "<start_of_turn>user\n" + system + "\n\n" + overviewText + "=== RELEVANT DOCUMENT SEGMENTS ===\n" + context + "\n=== END OF CONTEXT ===\n<end_of_turn>\n<start_of_turn>model\nUnderstood. I will answer based on those segments and cite page numbers.<end_of_turn>\n" + (historyText ? historyText + "\n" : "") + "<start_of_turn>user\n" + question + "<end_of_turn>\n<start_of_turn>model\n";
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Pre-load and cache the PDF text for a given document.
- * Call this when the user opens a Chat session so the first query is fast.
+ * Chunk and embed a document, persisting vectors to the local store.
+ * Call this once per document before querying. Safe to call again — it
+ * overwrites any previously stored vectors for the same ID.
  *
- * @param documentId  The document's UUID (used as cache key).
- * @param filePath    Absolute path to the PDF file.
+ * @param id         Document UUID (used as the vector store key).
+ * @param path       Local file path to the PDF.
+ * @param onProgress Optional 0–1 progress callback fired after each chunk.
  */
 export async function prepareDocument(
-  documentId: string,
-  filePath: string,
+  id: string,
+  path: string,
+  onProgress?: (progress: number) => void,
 ): Promise<void> {
-  if (_docTextCache[documentId]) return; // already cached
-  const text = await extractPdfText(filePath);
-  _docTextCache[documentId] = text;
+  const text = await extractPdfText(path);
+  const chunks = chunkify(text);
+  const vectorChunks: VectorChunk[] = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const embedding = await getEmbedding(chunk.text);
+    vectorChunks.push({
+      id: uuidv4(),
+      documentId: id,
+      text: chunk.text,
+      embedding,
+      metadata: { pageNumber: chunk.pageNumber },
+    });
+    if (onProgress) {
+      onProgress((i + 1) / chunks.length);
+    }
+  }
+
+  await saveDocumentVectors(id, vectorChunks);
 }
 
 /**
- * Answer a user question about a document using on-device Gemma inference.
+ * Answer a question about a document using RAG.
+ * Automatically embeds the document on first call if vectors are missing.
  *
- * @param documentId   The document's UUID.
- * @param filePath     Absolute path to the PDF (used if not yet cached).
- * @param history      Full conversation history for multi-turn context.
- * @param question     The user's latest message.
- * @param onToken      Optional streaming callback for progressive UI updates.
- * @returns            The assistant's response text.
+ * @param id         Document UUID.
+ * @param path       Local file path to the PDF (needed for auto-embed fallback).
+ * @param history    Prior conversation messages for context.
+ * @param question   The user's question.
+ * @param onToken    Optional streaming callback for incremental UI updates.
+ * @returns          The model's complete response text.
  */
 export async function askDocument(
-  documentId: string,
-  filePath: string,
+  id: string,
+  path: string,
   history: ChatMessage[],
   question: string,
   onToken?: (token: string) => void,
 ): Promise<string> {
-  // Ensure doc text is available
-  if (!_docTextCache[documentId]) {
-    await prepareDocument(documentId, filePath);
+  const queryEmbedding = await getEmbedding(question);
+  let chunks = await searchVectors(id, queryEmbedding, TOP_K_CHUNKS);
+
+  // Auto-embed on first query if vectors haven't been built yet
+  if (chunks.length === 0) {
+    await prepareDocument(id, path);
+    chunks = await searchVectors(id, queryEmbedding, TOP_K_CHUNKS);
   }
 
-  const docText = _docTextCache[documentId];
-  const prompt = buildPrompt(docText, history, question);
-  const answer = await runInference(prompt, onToken);
-  return answer;
+  // Fetch all stored chunks to find the page-1 overview segment
+  const allChunks = await searchVectors(id, queryEmbedding, 1000);
+  const overview = allChunks.find((c) => c.metadata.pageNumber === 1) ?? null;
+
+  const prompt = buildPrompt(chunks, overview, history, question);
+  return runInference(prompt, onToken);
 }
 
 /**
- * Evict a document from the in-memory text cache.
- * Call this when a document is deleted.
+ * Remove all stored vectors for a document (e.g. when the document is deleted).
+ *
+ * @param id Document UUID.
  */
-export function evictDocument(documentId: string): void {
-  delete _docTextCache[documentId];
+export async function evictDocument(id: string): Promise<void> {
+  await saveDocumentVectors(id, []);
 }
