@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import QRCode from 'qrcode';
-import { PanelLeft, Sun, Moon, HardDrive } from 'lucide-react';
+import { Sun, Moon, HardDrive } from 'lucide-react';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import ChatArea, { Message } from './ChatArea';
@@ -290,26 +290,15 @@ const App: React.FC = () => {
 
       {/* ── Header ── */}
       <header className={`h-14 flex items-center justify-between px-4 border-b shadow-sm sticky top-0 z-40 ${headerBg}`}>
-        {/* Left: sidebar toggle + logo */}
-        <div className="flex items-center gap-3 z-10">
-          {!sidebarOpen && (
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-2 rounded-xl hover:bg-white/10 transition-colors text-white"
-              title="Open sidebar"
-            >
-              <PanelLeft size={20} />
-            </button>
-          )}
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center">
-              <HardDrive size={15} className="text-white" />
-            </div>
-            <span className="font-bold text-base tracking-tight text-white">Edusaku PC</span>
+        {/* Left: logo */}
+        <div className="flex items-center gap-2 z-10 pl-14">
+          <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center">
+            <HardDrive size={15} className="text-white" />
           </div>
+          <span className="font-bold text-base tracking-tight text-white">Edusaku PC</span>
         </div>
 
-        {/* Center: active session title — absolutely centered */}
+        {/* Center: active session title */}
         {activeSession && activeSession.title !== 'New Chat' && (
           <div className="absolute left-0 right-0 flex justify-center pointer-events-none">
             <span className="text-sm font-medium text-white/80 max-w-xs truncate px-4 text-center">
@@ -335,6 +324,7 @@ const App: React.FC = () => {
         <Sidebar
           dark={dark}
           isOpen={sidebarOpen}
+          onOpen={() => setSidebarOpen(true)}
           onClose={() => setSidebarOpen(false)}
           qrCodeDataUrl={qrCodeDataUrl}
           serverInfo={serverInfo}
@@ -350,12 +340,11 @@ const App: React.FC = () => {
           onSelectChat={(id) => setActiveChatId(id)}
           onDeleteChat={handleDeleteChat}
           onRenameChat={handleRenameChat}
-          onRefreshUploads={fetchUploads}
         />
 
         <main className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${
-          sidebarOpen ? 'lg:ml-72' : 'ml-0'
-        }`}>
+          sidebarOpen ? 'ml-[14rem+3.5rem]' : 'ml-14'
+        }`} style={{ marginLeft: sidebarOpen ? '14rem' : '3.5rem' }}>
           <ChatArea
             dark={dark}
             messages={messages}
