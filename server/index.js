@@ -109,6 +109,19 @@ app.post('/upload', upload.single('image'), (req, res) => {
     });
 });
 
+// Delete file endpoint
+app.delete('/files/:filename', (req, res) => {
+    const filename = req.params.filename;
+    const filePath = path.join(uploadDir, filename);
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'File not found' });
+    }
+    fs.unlink(filePath, (err) => {
+        if (err) return res.status(500).json({ error: 'Failed to delete file' });
+        res.json({ message: 'File deleted successfully' });
+    });
+});
+
 // Catch-all
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'client/build/index.html'));
