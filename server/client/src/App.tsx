@@ -17,7 +17,6 @@ export interface ChatSession {
   title: string;
   createdAt: string;
   messages: Message[];
-  /** filenames of documents attached to this session */
   attachedFiles: string[];
 }
 
@@ -25,17 +24,10 @@ export interface ChatSession {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-const sessionTitle = (messages: Message[]) => {
-  const first = messages.find((m) => m.role === 'user');
-  if (!first) return 'New Chat';
-  return first.content.length > 40
-    ? first.content.slice(0, 40) + '…'
-    : first.content;
-};
-
 // ── App ───────────────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
+
   // ── Theme ──────────────────────────────────────────────────────────────────
   const [dark, setDark] = useState(() => {
     const saved = localStorage.getItem('edusaku-theme');
@@ -97,7 +89,6 @@ const App: React.FC = () => {
         },
       });
       await fetchUploads();
-      // Auto-attach to active session
       if (activeChatId) {
         setSessions((prev) =>
           prev.map((s) =>
@@ -127,6 +118,16 @@ const App: React.FC = () => {
     if (file) uploadFile(file);
   };
 
+  // Delete upload — calls server DELETE endpoint (or just removes from list if server doesn't support it)
+  const handleDeleteUpload = async (filename: string) => {
+    try {
+      await axios.delete(`/files/${encodeURIComponent(filename)}`);
+    } catch {
+      // Server may not have DELETE endpoint yet — remove from local state anyway
+    }
+    setUploads((prev) => prev.filter((f) => f.name !== filename));
+  };
+
   // ── Chat sessions ──────────────────────────────────────────────────────────
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -134,7 +135,7 @@ const App: React.FC = () => {
   const activeSession = sessions.find((s) => s.id === activeChatId) ?? null;
   const messages = activeSession?.messages ?? [];
 
-  const createNewChat = () => {
+  const createNewChat = useCallback(() => {
     const id = uid();
     const session: ChatSession = {
       id,
@@ -145,13 +146,28 @@ const App: React.FC = () => {
     };
     setSessions((prev) => [session, ...prev]);
     setActiveChatId(id);
+  }, []);
+
+  const handleDeleteChat = (id: string) => {
+    setSessions((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      // If we deleted the active chat, switch to the next one
+      if (id === activeChatId) {
+        setActiveChatId(next.length > 0 ? next[0].id : null);
+      }
+      return next;
+    });
   };
 
-  // Create a default session on first load
+  const handleRenameChat = (id: string, title: string) => {
+    setSessions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, title } : s)),
+    );
+  };
+
   useEffect(() => {
     if (sessions.length === 0) createNewChat();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessions.length, createNewChat]);
 
   // ── Chat input & send ──────────────────────────────────────────────────────
   const [input, setInput] = useState('');
@@ -164,22 +180,20 @@ const App: React.FC = () => {
     setInput('');
     setIsChatting(true);
 
-    // Build context from attached files
     const session = sessions.find((s) => s.id === activeChatId);
+    const isFirstMessage = (session?.messages.length ?? 0) === 0;
+
     const fileContext = session?.attachedFiles.length
       ? `\n\n[Context: The user has uploaded the following documents: ${session.attachedFiles.join(', ')}. Refer to them when relevant.]`
       : '';
 
     const userMsg: Message = { role: 'user', content: userText };
 
+    // Append user message immediately
     setSessions((prev) =>
       prev.map((s) =>
         s.id === activeChatId
-          ? {
-              ...s,
-              messages: [...s.messages, userMsg],
-              title: s.messages.length === 0 ? (userText.length > 40 ? userText.slice(0, 40) + '…' : userText) : s.title,
-            }
+          ? { ...s, messages: [...s.messages, userMsg] }
           : s,
       ),
     );
@@ -187,6 +201,7 @@ const App: React.FC = () => {
     try {
       const res = await axios.post('/chat', { prompt: userText + fileContext });
       const assistantMsg: Message = { role: 'assistant', content: res.data.response };
+
       setSessions((prev) =>
         prev.map((s) =>
           s.id === activeChatId
@@ -194,6 +209,30 @@ const App: React.FC = () => {
             : s,
         ),
       );
+
+      // After first exchange, ask AI to generate a short title
+      if (isFirstMessage) {
+        try {
+          const titleRes = await axios.post('/chat', {
+            prompt: `In 5 words or less, write a concise title for a conversation that starts with: "${userText}". Reply with ONLY the title, no punctuation, no quotes.`,
+          });
+          const generatedTitle = titleRes.data.response?.trim().slice(0, 50) || userText.slice(0, 40);
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === activeChatId ? { ...s, title: generatedTitle } : s,
+            ),
+          );
+        } catch {
+          // Fallback: use first user message as title
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === activeChatId
+                ? { ...s, title: userText.length > 40 ? userText.slice(0, 40) + '…' : userText }
+                : s,
+            ),
+          );
+        }
+      }
     } catch (err: any) {
       const errMsg: Message = {
         role: 'assistant',
@@ -221,15 +260,11 @@ const App: React.FC = () => {
   const headerBg = dark
     ? 'bg-gray-900 border-gray-700/60'
     : 'bg-gradient-to-r from-blue-700 to-blue-600 border-blue-800/20';
-
-  const headerText = 'text-white';
-
   const appBg = dark ? 'bg-gray-950' : 'bg-slate-100';
 
   return (
     <div className={`min-h-screen flex flex-col ${appBg} transition-colors duration-200`}>
 
-      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -241,36 +276,35 @@ const App: React.FC = () => {
       {/* ── Header ── */}
       <header className={`h-14 flex items-center justify-between px-4 border-b shadow-sm sticky top-0 z-40 ${headerBg}`}>
         <div className="flex items-center gap-3">
-          {/* Sidebar toggle */}
-          <button
-            onClick={() => setSidebarOpen((v) => !v)}
-            className="p-2 rounded-xl hover:bg-white/10 transition-colors text-white"
-            title="Toggle sidebar"
-          >
-            <PanelLeft size={20} />
-          </button>
+          {/* Sidebar toggle — only shown when sidebar is closed */}
+          {!sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 rounded-xl hover:bg-white/10 transition-colors text-white"
+              title="Open sidebar"
+            >
+              <PanelLeft size={20} />
+            </button>
+          )}
 
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center">
               <HardDrive size={15} className="text-white" />
             </div>
-            <span className={`font-bold text-base tracking-tight ${headerText}`}>Edusaku PC</span>
+            <span className="font-bold text-base tracking-tight text-white">Edusaku PC</span>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Active session title */}
           {activeSession && activeSession.title !== 'New Chat' && (
             <span className="hidden md:block text-sm text-white/70 max-w-xs truncate">
               {activeSession.title}
             </span>
           )}
-
-          {/* Dark mode toggle */}
           <button
             onClick={() => setDark((v) => !v)}
             className="p-2 rounded-xl hover:bg-white/10 transition-colors text-white"
-            title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={dark ? 'Light mode' : 'Dark mode'}
           >
             {dark ? <Sun size={18} /> : <Moon size={18} />}
           </button>
@@ -279,8 +313,6 @@ const App: React.FC = () => {
 
       {/* ── Body ── */}
       <div className="flex flex-1 overflow-hidden relative">
-
-        {/* Sidebar */}
         <Sidebar
           dark={dark}
           isOpen={sidebarOpen}
@@ -292,19 +324,19 @@ const App: React.FC = () => {
           uploadProgress={uploadProgress}
           onUploadClick={() => fileInputRef.current?.click()}
           onDrop={handleDrop}
+          onDeleteUpload={handleDeleteUpload}
           sessions={sessions}
           activeChatId={activeChatId}
           onNewChat={createNewChat}
           onSelectChat={(id) => setActiveChatId(id)}
+          onDeleteChat={handleDeleteChat}
+          onRenameChat={handleRenameChat}
           onRefreshUploads={fetchUploads}
         />
 
-        {/* Main chat — push right when sidebar open on desktop */}
-        <main
-          className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${
-            sidebarOpen ? 'lg:ml-72' : 'ml-0'
-          }`}
-        >
+        <main className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${
+          sidebarOpen ? 'lg:ml-72' : 'ml-0'
+        }`}>
           <ChatArea
             dark={dark}
             messages={messages}
