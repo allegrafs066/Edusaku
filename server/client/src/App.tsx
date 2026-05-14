@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { Smartphone, CheckCircle, RefreshCcw, Image as ImageIcon, HardDrive, Send, Bot, User } from 'lucide-react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -208,6 +209,7 @@ const App: React.FC = () => {
                       msg.content
                     ) : (
                       <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
                         components={{
                           p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
                           h1: ({ children }) => <h1 className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h1>,
@@ -228,6 +230,20 @@ const App: React.FC = () => {
                             <blockquote className="border-l-2 border-blue-300 pl-3 my-2 text-blue-700 italic">{children}</blockquote>
                           ),
                           hr: () => <hr className="border-blue-200 my-3" />,
+                          table: ({ children }) => (
+                            <div className="overflow-x-auto my-3">
+                              <table className="min-w-full border-collapse text-xs">{children}</table>
+                            </div>
+                          ),
+                          thead: ({ children }) => <thead className="bg-blue-100">{children}</thead>,
+                          tbody: ({ children }) => <tbody>{children}</tbody>,
+                          tr: ({ children }) => <tr className="border-b border-blue-100">{children}</tr>,
+                          th: ({ children }) => (
+                            <th className="px-3 py-2 text-left font-semibold text-blue-900 border border-blue-200">{children}</th>
+                          ),
+                          td: ({ children }) => (
+                            <td className="px-3 py-2 text-blue-800 border border-blue-100">{children}</td>
+                          ),
                         }}
                       >
                         {msg.content}
