@@ -14,6 +14,7 @@ import { Typography } from '../theme/typography';
 import { useAppStore } from '../store/appStore';
 import DocumentCard from '../components/DocumentCard';
 import PDFUploader from '../components/PDFUploader';
+import { getSessionDisplayTitle } from '../services/titleGenerator';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,7 +24,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
 export default function HomeScreen({ navigation }: Props) {
   const colors = useColors();
-  const { documents, setActiveDocument, isUploadingPDF } = useAppStore();
+  const { documents, setActiveDocument, isUploadingPDF, sessions } = useAppStore();
 
   // ── Header ──────────────────────────────────────────────────────────────────
 
@@ -104,6 +105,11 @@ export default function HomeScreen({ navigation }: Props) {
           renderItem={({ item }) => (
             <DocumentCard
               document={item}
+              sessionTitle={
+                sessions[item.id]
+                  ? getSessionDisplayTitle(sessions[item.id], item.title)
+                  : undefined
+              }
               onPress={() => handleDocumentPress(item.id)}
               onLongPress={() => handleDocumentLongPress(item.id, item.title)}
             />

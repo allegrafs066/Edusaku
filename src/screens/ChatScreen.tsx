@@ -17,8 +17,10 @@ import { useColors } from '../theme/colors';
 import { Typography } from '../theme/typography';
 import { useAppStore, type ChatMessage } from '../store/appStore';
 import ChatBubble from '../components/ChatBubble';
-import { askDocument } from '../services/rag';
+import ProgressBar from '../components/ProgressBar';
+import { askDocument, prepareDocument } from '../services/rag';
 import { loadModel } from '../services/inference';
+import { generateSessionTitle } from '../services/titleGenerator';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,7 +113,7 @@ export default function ChatScreen({ route }: Props) {
   const { documentId } = route.params;
   const colors = useColors();
 
-  const { getSession, appendMessage, isInferring, setInferring, documents } =
+  const { getSession, appendMessage, isInferring, setInferring, documents, updateDocument, setSessionTitle } =
     useAppStore();
 
   const session = getSession(documentId);
@@ -122,6 +124,8 @@ export default function ChatScreen({ route }: Props) {
   const [input, setInput] = useState('');
   // Holds the streamed partial response while the model is generating
   const [streamingText, setStreamingText] = useState('');
+  // Indexing state: null = not indexing, 0–1 = in progress
+  const [indexingProgress, setIndexingProgress] = useState<number | null>(null);
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   // Pre-load model when screen mounts so first response is faster
@@ -142,7 +146,7 @@ export default function ChatScreen({ route }: Props) {
 
   async function handleSend() {
     const trimmed = input.trim();
-    if (!trimmed || isInferring) return;
+    if (!trimmed || isInferring || indexingProgress !== null) return;
 
     // Append user message to store
     appendMessage(documentId, {
@@ -156,10 +160,32 @@ export default function ChatScreen({ route }: Props) {
     setStreamingText('');
     setInferring(true);
 
+    // Fire title generation in the background after the very first message.
+    // We check session?.title here (before the new message is in the store)
+    // so we only ever generate once per session.
+    if (!session?.title && document) {
+      generateSessionTitle(trimmed, document.title)
+        .then((title) => setSessionTitle(documentId, title))
+        .catch((err) => console.warn('[ChatScreen] Title generation failed:', err));
+    }
+
     try {
       // Grab the current history BEFORE we appended (for context)
       const history = session?.messages ?? [];
       const filePath = document?.filePath ?? '';
+
+      // If the document hasn't been indexed yet, run prepareDocument first
+      // and show a progress banner so the user knows what's happening.
+      if (!document?.embeddedAt) {
+        setIndexingProgress(0);
+        try {
+          await prepareDocument(filePath, filePath, (p) => setIndexingProgress(p));
+          // Mark the document as embedded in the store
+          updateDocument(documentId, { embeddedAt: new Date().toISOString() });
+        } finally {
+          setIndexingProgress(null);
+        }
+      }
 
       const answer = await askDocument(
         documentId,
@@ -239,6 +265,23 @@ export default function ChatScreen({ route }: Props) {
         />
       )}
 
+      {/* Indexing progress banner — shown on first-time document embedding */}
+      {indexingProgress !== null && (
+        <View
+          style={[
+            styles.indexingBanner,
+            { backgroundColor: colors.surface, borderTopColor: colors.border },
+          ]}
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={'Indexing document, ' + Math.round(indexingProgress * 100) + ' percent complete'}
+        >
+          <Text style={[Typography.labelSmall, { color: colors.textSecondary, marginBottom: 6 }]}>
+            {'Indexing document… ' + Math.round(indexingProgress * 100) + '%'}
+          </Text>
+          <ProgressBar progress={indexingProgress} height={4} />
+        </View>
+      )}
+
       {/* Input bar */}
       <View
         style={[
@@ -275,16 +318,16 @@ export default function ChatScreen({ route }: Props) {
             styles.sendBtn,
             {
               backgroundColor:
-                input.trim().length > 0 && !isInferring
+                input.trim().length > 0 && !isInferring && indexingProgress === null
                   ? colors.primary
                   : colors.border,
             },
           ]}
           onPress={handleSend}
-          disabled={input.trim().length === 0 || isInferring}
+          disabled={input.trim().length === 0 || isInferring || indexingProgress !== null}
           accessibilityRole="button"
           accessibilityLabel="Send message"
-          accessibilityState={{ disabled: input.trim().length === 0 || isInferring }}
+          accessibilityState={{ disabled: input.trim().length === 0 || isInferring || indexingProgress !== null }}
         >
           <Text style={[Typography.labelSmall, { color: '#FFFFFF' }]}>Send</Text>
         </TouchableOpacity>
@@ -330,5 +373,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     alignSelf: 'flex-end',
+  },
+  indexingBanner: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });
