@@ -7,16 +7,23 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { getServerUrl } from '../utils/storage';
 import { uploadImage } from '../services/UploadService';
-import { LightColors } from '../theme/colors';
+import { useColors } from '../theme/colors';
+import { Typography } from '../theme/typography';
+import ProgressBar from '../components/ProgressBar';
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 const UploadScreen = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { imageUri } = route.params;
+  const colors = useColors();
+
+  const { imageUri } = route.params as { imageUri: string };
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -24,22 +31,29 @@ const UploadScreen = () => {
   const handleUpload = async () => {
     const baseUrl = await getServerUrl();
     if (!baseUrl) {
-      Alert.alert('Not Connected', 'Please connect to your PC server first.', [
-        { text: 'Go to Connection', onPress: () => navigation.navigate('Connection') },
-      ]);
+      Alert.alert(
+        'Not Connected',
+        'Connect to your PC server first.',
+        [
+          { text: 'Go to Connection', onPress: () => navigation.navigate('Connection') },
+          { text: 'Cancel', style: 'cancel' },
+        ],
+      );
       return;
     }
 
     setIsUploading(true);
+    setUploadProgress(0);
+
     try {
       await uploadImage(baseUrl, imageUri, (progress) => {
-        setUploadProgress(progress);
+        setUploadProgress(progress / 100); // ProgressBar expects 0–1
       });
-      Alert.alert('Success', 'Document uploaded to PC successfully!', [
+      Alert.alert('Sent ✓', 'Document uploaded to your PC successfully.', [
         { text: 'OK', onPress: () => navigation.navigate('Home') },
       ]);
-    } catch (error) {
-      Alert.alert('Upload Failed', 'Failed to send document to PC. Check your connection.');
+    } catch {
+      Alert.alert('Upload Failed', 'Could not send the document. Check your connection and try again.');
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -47,58 +61,77 @@ const UploadScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Preview Document</Text>
-      
-      <View style={styles.previewContainer}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Title */}
+      <Text style={[Typography.heading3, styles.title, { color: colors.textPrimary }]}>
+        Preview Document
+      </Text>
+
+      {/* Image preview */}
+      <View style={[styles.previewContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="contain" />
       </View>
 
-      {isUploading ? (
-        <View style={styles.progressContainer}>
-          <ActivityIndicator size="large" color={LightColors.primary} />
-          <Text style={styles.progressText}>Uploading: {uploadProgress}%</Text>
-          <View style={styles.progressBarBackground}>
-            <View style={[styles.progressBarForeground, { width: `${uploadProgress}%` }]} />
+      {/* Upload progress */}
+      {isUploading && (
+        <View style={styles.progressSection}>
+          <ProgressBar progress={uploadProgress} height={6} />
+          <View style={styles.progressRow}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+              Sending to PC… {Math.round(uploadProgress * 100)}%
+            </Text>
           </View>
         </View>
-      ) : (
-        <View style={styles.buttonContainer}>
+      )}
+
+      {/* Action buttons */}
+      {!isUploading && (
+        <View style={styles.buttonRow}>
           <TouchableOpacity
-            style={[styles.button, styles.retakeButton]}
+            style={[styles.button, styles.retakeButton, { borderColor: colors.border }]}
             onPress={() => navigation.navigate('Camera')}
+            accessibilityRole="button"
+            accessibilityLabel="Retake photo"
           >
-            <Text style={styles.buttonText}>Retake</Text>
+            <Text style={[Typography.labelMedium, { color: colors.textPrimary }]}>
+              Retake
+            </Text>
           </TouchableOpacity>
+
           <TouchableOpacity
-            style={[styles.button, styles.uploadButton]}
+            style={[styles.button, styles.uploadButton, { backgroundColor: colors.primary }]}
             onPress={handleUpload}
+            accessibilityRole="button"
+            accessibilityLabel="Send document to PC"
           >
-            <Text style={styles.buttonText}>Send to PC</Text>
+            <Text style={[Typography.labelMedium, { color: '#FFFFFF' }]}>
+              Send to PC
+            </Text>
           </TouchableOpacity>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: 'white',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
     textAlign: 'center',
-    color: '#333',
+    marginBottom: 16,
   },
   previewContainer: {
     flex: 1,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 12,
+    borderRadius: 16,
+    borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 20,
   },
@@ -106,48 +139,29 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  buttonContainer: {
+  progressSection: {
+    marginBottom: 20,
+    gap: 10,
+  },
+  progressRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
   button: {
-    flex: 0.48,
-    padding: 15,
-    borderRadius: 8,
+    flex: 1,
+    paddingVertical: 15,
+    borderRadius: 14,
     alignItems: 'center',
   },
   retakeButton: {
-    backgroundColor: '#666',
+    borderWidth: 1.5,
   },
-  uploadButton: {
-    backgroundColor: LightColors.primary,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  progressContainer: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  progressText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#333',
-  },
-  progressBarBackground: {
-    width: '100%',
-    height: 10,
-    backgroundColor: '#eee',
-    borderRadius: 5,
-    marginTop: 15,
-    overflow: 'hidden',
-  },
-  progressBarForeground: {
-    height: '100%',
-    backgroundColor: LightColors.primary,
-  },
+  uploadButton: {},
 });
 
 export default UploadScreen;
