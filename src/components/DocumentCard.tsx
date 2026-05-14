@@ -24,6 +24,8 @@ interface DocumentCardProps {
   document: Document;
   onPress: () => void;
   onLongPress?: () => void;
+  /** AI-generated or fallback title for the most recent chat session. */
+  sessionTitle?: string;
   style?: ViewStyle;
 }
 
@@ -33,6 +35,7 @@ export default function DocumentCard({
   document,
   onPress,
   onLongPress,
+  sessionTitle,
   style,
 }: DocumentCardProps) {
   const colors = useColors();
@@ -69,6 +72,16 @@ export default function DocumentCard({
         >
           {document.title}
         </Text>
+
+        {/* Session title — shown once a chat has been started */}
+        {sessionTitle ? (
+          <Text
+            style={[Typography.bodySmall, styles.sessionTitle, { color: colors.primary }]}
+            numberOfLines={1}
+          >
+            {sessionTitle}
+          </Text>
+        ) : null}
 
         <Text
           style={[Typography.caption, styles.meta, { color: colors.textSecondary }]}
@@ -138,6 +151,9 @@ const styles = StyleSheet.create({
   },
   meta: {
     marginTop: 2,
+  },
+  sessionTitle: {
+    marginTop: 1,
   },
   badge: {
     paddingHorizontal: 8,

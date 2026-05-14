@@ -36,6 +36,10 @@ export interface ChatMessage {
 export interface ChatSession {
   documentId: string;
   messages: ChatMessage[];
+  /** AI-generated or fallback title for this session. */
+  title?: string;
+  /** Unix timestamp (ms) when the title was last generated. */
+  titleGeneratedAt?: number;
 }
 
 // ─── Store shape ──────────────────────────────────────────────────────────────
@@ -57,6 +61,7 @@ interface ChatSlice {
   appendMessage: (documentId: string, message: ChatMessage) => void;
   clearSession: (documentId: string) => void;
   getSession: (documentId: string) => ChatSession | undefined;
+  setSessionTitle: (documentId: string, title: string) => void;
 }
 
 interface UISlice {
@@ -129,6 +134,22 @@ export const useAppStore = create<AppStore>()(
         }),
 
       getSession: (documentId) => get().sessions[documentId],
+
+      setSessionTitle: (documentId, title) =>
+        set((s) => {
+          const existing = s.sessions[documentId];
+          if (!existing) return s;
+          return {
+            sessions: {
+              ...s.sessions,
+              [documentId]: {
+                ...existing,
+                title,
+                titleGeneratedAt: Date.now(),
+              },
+            },
+          };
+        }),
 
       // ── UI slice ────────────────────────────────────────────────────────────
       isInferring: false,
