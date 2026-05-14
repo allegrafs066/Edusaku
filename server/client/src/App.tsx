@@ -4,6 +4,7 @@ import { PanelLeft, Sun, Moon, HardDrive } from 'lucide-react';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import ChatArea, { Message } from './ChatArea';
+import Onboarding from './Onboarding';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,16 @@ const App: React.FC = () => {
     localStorage.setItem('edusaku-theme', dark ? 'dark' : 'light');
     document.documentElement.classList.toggle('dark', dark);
   }, [dark]);
+
+  // ── Onboarding ─────────────────────────────────────────────────────────────
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return localStorage.getItem('edusaku-onboarding-done') !== 'true';
+  });
+
+  const handleOnboardingDone = () => {
+    localStorage.setItem('edusaku-onboarding-done', 'true');
+    setShowOnboarding(false);
+  };
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -264,6 +275,10 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex flex-col ${appBg} transition-colors duration-200`}>
+
+      {showOnboarding && (
+        <Onboarding dark={dark} onDone={handleOnboardingDone} />
+      )}
 
       <input
         ref={fileInputRef}

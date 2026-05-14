@@ -5,7 +5,7 @@
  *   upload file → extract text (PDF or OCR) → chunk → embed → store in Vectra
  *   on chat     → embed query → retrieve top-k chunks → inject into Gemma prompt
  *
- * All processing is local — no network calls.
+ * All processing is local — no network calls after first model download.
  */
 
 'use strict';
@@ -13,21 +13,81 @@
 const fs   = require('fs');
 const path = require('path');
 
-// ── Lazy-loaded heavy deps ────────────────────────────────────────────────────
-// @xenova/transformers downloads the embedding model on first use (~23 MB).
-// We load it lazily so the server starts instantly.
+// ── PDF extraction ────────────────────────────────────────────────────────────
 
-let _pipeline = null;
-async function getEmbedder() {
-    if (_pipeline) return _pipeline;
-    console.log('[RAG] Loading embedding model (first run may take a moment)…');
-    const { pipeline } = await import('@xenova/transformers');
-    _pipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-    console.log('[RAG] Embedding model ready.');
-    return _pipeline;
+async function extractTextFromPDF(filePath) {
+    const pdfParse = require('pdf-parse');
+    const buffer = fs.readFileSync(filePath);
+    const data = await pdfParse(buffer);
+    return data.text || '';
 }
 
-// ── Vector store (Vectra — file-based JSON) ───────────────────────────────────
+// ── OCR for images ────────────────────────────────────────────────────────────
+
+async function extractTextFromImage(filePath) {
+    const Tesseract = require('tesseract.js');
+    console.log('[RAG] Running OCR on', path.basename(filePath), '…');
+    const { data: { text } } = await Tesseract.recognize(filePath, 'eng+ind', {
+        logger: () => {},
+    });
+    return text || '';
+}
+
+// ── Text extraction dispatcher ────────────────────────────────────────────────
+
+async function extractText(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.pdf') return extractTextFromPDF(filePath);
+    if (['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'].includes(ext)) {
+        return extractTextFromImage(filePath);
+    }
+    // Plain text fallback
+    try { return fs.readFileSync(filePath, 'utf8'); } catch { return ''; }
+}
+
+// ── Chunking ──────────────────────────────────────────────────────────────────
+
+const CHUNK_SIZE    = 500;
+const CHUNK_OVERLAP = 100;
+
+function chunkText(text) {
+    const clean = text.replace(/\s+/g, ' ').trim();
+    const chunks = [];
+    let start = 0;
+    while (start < clean.length) {
+        const end = Math.min(start + CHUNK_SIZE, clean.length);
+        const chunk = clean.slice(start, end).trim();
+        if (chunk.length > 30) chunks.push(chunk);
+        start += CHUNK_SIZE - CHUNK_OVERLAP;
+    }
+    return chunks;
+}
+
+// ── Embedding (lazy-loaded) ───────────────────────────────────────────────────
+// @xenova/transformers is ESM-only in newer versions.
+// We use a dynamic import wrapper cached after first load.
+
+let _embedder = null;
+
+async function getEmbedder() {
+    if (_embedder) return _embedder;
+    console.log('[RAG] Loading embedding model (first run downloads ~23 MB)…');
+    // Dynamic import for ESM module in CJS context
+    const { pipeline } = await import('@xenova/transformers');
+    _embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+        quantized: true,
+    });
+    console.log('[RAG] Embedding model ready.');
+    return _embedder;
+}
+
+async function embed(text) {
+    const embedder = await getEmbedder();
+    const output = await embedder(text, { pooling: 'mean', normalize: true });
+    return Array.from(output.data);
+}
+
+// ── Vector store (Vectra — file-based, no server needed) ─────────────────────
 
 const { LocalIndex } = require('vectra');
 const INDEX_DIR = path.join(__dirname, 'vector_index');
@@ -43,77 +103,25 @@ async function getIndex() {
     return _index;
 }
 
-// ── Text extraction ───────────────────────────────────────────────────────────
-
-async function extractTextFromPDF(filePath) {
-    const pdfParse = require('pdf-parse');
-    const buffer = fs.readFileSync(filePath);
-    const data = await pdfParse(buffer);
-    return data.text;
-}
-
-async function extractTextFromImage(filePath) {
-    const Tesseract = require('tesseract.js');
-    console.log('[RAG] Running OCR on', path.basename(filePath), '…');
-    const { data: { text } } = await Tesseract.recognize(filePath, 'eng+ind', {
-        logger: () => {}, // suppress progress logs
-    });
-    return text;
-}
-
-async function extractText(filePath) {
-    const ext = path.extname(filePath).toLowerCase();
-    if (ext === '.pdf') return extractTextFromPDF(filePath);
-    if (['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'].includes(ext)) {
-        return extractTextFromImage(filePath);
-    }
-    // Plain text fallback
-    return fs.readFileSync(filePath, 'utf8');
-}
-
-// ── Chunking ──────────────────────────────────────────────────────────────────
-
-const CHUNK_SIZE   = 400; // characters
-const CHUNK_OVERLAP = 80;
-
-function chunkText(text) {
-    const chunks = [];
-    let start = 0;
-    const clean = text.replace(/\s+/g, ' ').trim();
-    while (start < clean.length) {
-        const end = Math.min(start + CHUNK_SIZE, clean.length);
-        chunks.push(clean.slice(start, end).trim());
-        start += CHUNK_SIZE - CHUNK_OVERLAP;
-    }
-    return chunks.filter(c => c.length > 20); // drop tiny fragments
-}
-
-// ── Embedding ─────────────────────────────────────────────────────────────────
-
-async function embed(text) {
-    const embedder = await getEmbedder();
-    const output = await embedder(text, { pooling: 'mean', normalize: true });
-    // output.data is a Float32Array — convert to plain Array for Vectra
-    return Array.from(output.data);
-}
-
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Process a newly uploaded file:
- *   1. Extract text
- *   2. Chunk
- *   3. Embed each chunk
- *   4. Store in vector index with metadata
- *
- * Returns { chunks: number, preview: string }
+ * Index a file: extract text → chunk → embed → store.
+ * Called after upload. Runs in background.
  */
 async function indexFile(filePath, filename) {
     console.log(`[RAG] Indexing: ${filename}`);
 
-    const text = await extractText(filePath);
-    if (!text || text.trim().length < 10) {
-        console.warn('[RAG] No usable text extracted from', filename);
+    let text = '';
+    try {
+        text = await extractText(filePath);
+    } catch (err) {
+        console.error(`[RAG] Text extraction failed for ${filename}:`, err.message);
+        return { chunks: 0, preview: '' };
+    }
+
+    if (!text || text.trim().length < 20) {
+        console.warn(`[RAG] No usable text from ${filename}`);
         return { chunks: 0, preview: '' };
     }
 
@@ -123,72 +131,120 @@ async function indexFile(filePath, filename) {
     const index = await getIndex();
 
     for (let i = 0; i < chunks.length; i++) {
-        const vector = await embed(chunks[i]);
-        await index.insertItem({
-            vector,
-            metadata: {
-                filename,
-                chunkIndex: i,
-                text: chunks[i],
-            },
-        });
+        try {
+            const vector = await embed(chunks[i]);
+            await index.insertItem({
+                vector,
+                metadata: {
+                    filename,
+                    chunkIndex: i,
+                    text: chunks[i],
+                },
+            });
+        } catch (err) {
+            console.error(`[RAG] Failed to embed chunk ${i} of ${filename}:`, err.message);
+        }
     }
 
-    console.log(`[RAG] Indexed ${chunks.length} chunks for ${filename}`);
+    console.log(`[RAG] Done indexing ${filename} (${chunks.length} chunks)`);
     return {
         chunks: chunks.length,
-        preview: text.slice(0, 200),
+        preview: text.slice(0, 300),
     };
 }
 
 /**
- * Delete all index entries for a given filename.
+ * Remove all index entries for a given filename.
  */
 async function deleteFileFromIndex(filename) {
-    const index = await getIndex();
-    const all = await index.listItems();
-    const toDelete = all.filter(item => item.metadata?.filename === filename);
-    for (const item of toDelete) {
-        await index.deleteItem(item.id);
+    try {
+        const index = await getIndex();
+        const all = await index.listItems();
+        const toDelete = all.filter(item => item.metadata?.filename === filename);
+        for (const item of toDelete) {
+            await index.deleteItem(item.id);
+        }
+        console.log(`[RAG] Removed ${toDelete.length} chunks for ${filename}`);
+    } catch (err) {
+        console.error('[RAG] deleteFileFromIndex error:', err.message);
     }
-    console.log(`[RAG] Removed ${toDelete.length} chunks for ${filename}`);
 }
 
 /**
- * Retrieve the top-k most relevant chunks for a query.
- * Returns an array of { text, filename, score } objects.
+ * Retrieve top-k most relevant chunks for a query.
  */
-async function retrieve(query, topK = 5) {
-    const index = await getIndex();
-    const count = (await index.listItems()).length;
-    if (count === 0) return [];
+async function retrieve(query, topK = 6) {
+    try {
+        const index = await getIndex();
+        const items = await index.listItems();
+        if (items.length === 0) return [];
 
-    const queryVector = await embed(query);
-    const results = await index.queryItems(queryVector, topK);
+        const queryVector = await embed(query);
+        const results = await index.queryItems(queryVector, topK);
 
-    return results.map(r => ({
-        text:     r.item.metadata.text,
-        filename: r.item.metadata.filename,
-        score:    r.score,
-    }));
+        return results
+            .filter(r => r.score > 0.2) // filter low-relevance chunks
+            .map(r => ({
+                text:     r.item.metadata.text,
+                filename: r.item.metadata.filename,
+                score:    r.score,
+            }));
+    } catch (err) {
+        console.error('[RAG] retrieve error:', err.message);
+        return [];
+    }
 }
 
 /**
- * Build an augmented prompt by prepending retrieved context.
- * Returns the full prompt string to send to Ollama.
+ * Build a RAG-augmented prompt.
+ * If no documents are indexed, returns the plain query.
  */
 async function buildRAGPrompt(userQuery) {
-    const chunks = await retrieve(userQuery, 5);
+    const chunks = await retrieve(userQuery, 6);
 
     if (chunks.length === 0) {
-        return userQuery; // no documents indexed — plain prompt
+        return userQuery;
     }
 
-    const context = chunks
-        .map((c, i) => `[Document: ${c.filename}, chunk ${i + 1}]\n${c.text}`)
-        .join('\n\n---\n\n');
+    // Group by filename for cleaner context
+    const byFile = {};
+    for (const c of chunks) {
+        if (!byFile[c.filename]) byFile[c.filename] = [];
+        byFile[c.filename].push(c.text);
+    }
 
-    return `You are an AI education assistant. Use the following document excerpts to answer the question accurately. If the answer is not in the documents, say so clearly.\n\n=== DOCUMENT CONTEXT ===\n${context}\n\n=== QUESTION ===\n${userQuery}`;
+    const contextBlocks = Object.entries(byFile).map(([filename, texts]) => {
+        const displayName = filename.split('-').slice(2).join('-') || filename;
+        return `=== Document: ${displayName} ===\n${texts.join('\n\n')}`;
+    });
+
+    const context = contextBlocks.join('\n\n');
+
+    return `You are an AI education assistant. The following are excerpts from documents the user has uploaded. Use them to answer the question accurately and specifically. Quote or reference the document content when relevant. If the answer is not in the documents, say so clearly.
+
+--- DOCUMENT CONTEXT ---
+${context}
+
+--- USER QUESTION ---
+${userQuery}`;
 }
 
-module.exports = { indexFile, deleteFileFromIndex, retrieve, buildRAGPrompt };
+/**
+ * Get indexing status: how many chunks are stored per file.
+ */
+async function getIndexStatus() {
+    try {
+        const index = await getIndex();
+        const items = await index.listItems();
+        const counts = {};
+        for (const item of items) {
+            const f = item.metadata?.filename || 'unknown';
+            counts[f] = (counts[f] || 0) + 1;
+        }
+        return { totalChunks: items.length, files: counts };
+    } catch {
+        return { totalChunks: 0, files: {} };
+    }
+}
+
+module.exports = { indexFile, deleteFileFromIndex, retrieve, buildRAGPrompt, getIndexStatus };
