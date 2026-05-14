@@ -6,7 +6,7 @@ const path    = require('path');
 const fs      = require('fs');
 const axios   = require('axios');
 
-const { indexFile, deleteFileFromIndex, buildRAGPrompt } = require('./rag');
+const { indexFile, deleteFileFromIndex, buildRAGPrompt, getIndexStatus } = require('./rag');
 
 const app  = express();
 const PORT = 3000;
@@ -133,7 +133,25 @@ app.post('/chat', async (req, res) => {
     }
 });
 
-// Catch-all → React app
+// RAG status endpoint
+app.get('/rag/status', async (req, res) => {
+    const status = await getIndexStatus();
+    res.json(status);
+});
+
+// Manually trigger re-index of a file
+app.post('/rag/reindex/:filename', async (req, res) => {
+    const filename = req.params.filename;
+    const filePath = path.join(uploadDir, filename);
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'File not found' });
+    }
+    res.json({ message: 'Re-indexing started', filename });
+    // Run in background
+    deleteFileFromIndex(filename)
+        .then(() => indexFile(filePath, filename))
+        .catch(err => console.error('[Reindex] Error:', err.message));
+});
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'client/build/index.html'));
 });
@@ -147,4 +165,26 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`PORT: ${PORT}`);
     console.log('-----------------------------------------');
     console.log('RAG pipeline: active (Tesseract OCR + MiniLM embeddings + Vectra)');
+
+    // Re-index any existing uploaded files that aren't indexed yet
+    setTimeout(async () => {
+        try {
+            const { files: indexed } = await getIndexStatus();
+            const uploaded = fs.readdirSync(uploadDir);
+            const toIndex = uploaded.filter(f => !indexed[f]);
+            if (toIndex.length > 0) {
+                console.log(`[RAG] Found ${toIndex.length} unindexed file(s), indexing now…`);
+                for (const filename of toIndex) {
+                    const filePath = path.join(uploadDir, filename);
+                    await indexFile(filePath, filename).catch(e =>
+                        console.error(`[RAG] Failed to index ${filename}:`, e.message)
+                    );
+                }
+            } else {
+                console.log('[RAG] All files already indexed.');
+            }
+        } catch (err) {
+            console.error('[RAG] Startup indexing error:', err.message);
+        }
+    }, 1000); // slight delay to let server fully start
 });
