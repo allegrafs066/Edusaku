@@ -1,24 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Smartphone, Upload, FileImage, RefreshCcw, Plus,
-  MessageSquare, X, MoreHorizontal, Trash2, PanelLeftClose,
-  MoreVertical, Pencil, Check, AlertTriangle,
+  Smartphone, Upload, FileImage, Plus, MessageSquare, X,
+  Trash2, PanelLeftOpen, MoreVertical, Pencil, Check,
+  AlertTriangle, FolderOpen, QrCode, Grid3X3,
 } from 'lucide-react';
+import axios from 'axios';
 
-interface UploadFile {
-  name: string;
-  timestamp: string;
-}
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-interface ChatSession {
-  id: string;
-  title: string;
-  createdAt: string;
-}
+interface UploadFile { name: string; timestamp: string; }
+interface ChatSession { id: string; title: string; createdAt: string; }
 
 interface SidebarProps {
   dark: boolean;
   isOpen: boolean;
+  onOpen: () => void;
   onClose: () => void;
   qrCodeDataUrl: string;
   serverInfo: { ip: string; port: number } | null;
@@ -34,7 +30,6 @@ interface SidebarProps {
   onSelectChat: (id: string) => void;
   onDeleteChat: (id: string) => void;
   onRenameChat: (id: string, title: string) => void;
-  onRefreshUploads: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -43,59 +38,37 @@ const getDisplayName = (filename: string) => {
   const parts = filename.split('-');
   return parts.length > 2 ? parts.slice(2).join('-') : filename;
 };
-
-const isImage = (filename: string) =>
-  /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(filename);
-
-const getFileExt = (filename: string) => {
-  const ext = filename.split('.').pop()?.toUpperCase() || 'FILE';
+const isImage = (f: string) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(f);
+const getFileExt = (f: string) => {
+  const ext = f.split('.').pop()?.toUpperCase() || 'FILE';
   return ext.length > 4 ? 'FILE' : ext;
 };
 
 // ── Confirm Dialog ────────────────────────────────────────────────────────────
 
 export const ConfirmDialog: React.FC<{
-  dark: boolean;
-  title: string;
-  message: string;
-  onConfirm: () => void;
-  onCancel: () => void;
+  dark: boolean; title: string; message: string;
+  onConfirm: () => void; onCancel: () => void;
 }> = ({ dark, title, message, onConfirm, onCancel }) => (
-  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
     <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
     <div className={`relative z-10 w-full max-w-sm rounded-3xl shadow-2xl border p-6 ${
       dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200'
     }`}>
       <div className="flex items-start gap-4 mb-5">
-        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
-          dark ? 'bg-red-900/40' : 'bg-red-50'
-        }`}>
+        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${dark ? 'bg-red-900/40' : 'bg-red-50'}`}>
           <AlertTriangle size={20} className="text-red-500" />
         </div>
         <div>
-          <h3 className={`font-bold text-base mb-1 ${dark ? 'text-white' : 'text-slate-800'}`}>
-            {title}
-          </h3>
-          <p className={`text-sm leading-relaxed ${dark ? 'text-gray-400' : 'text-slate-500'}`}>
-            {message}
-          </p>
+          <h3 className={`font-bold text-base mb-1 ${dark ? 'text-white' : 'text-slate-800'}`}>{title}</h3>
+          <p className={`text-sm leading-relaxed ${dark ? 'text-gray-400' : 'text-slate-500'}`}>{message}</p>
         </div>
       </div>
       <div className="flex gap-3">
-        <button
-          onClick={onCancel}
-          className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-colors border ${
-            dark
-              ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
-              : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-          }`}
-        >
-          Cancel
-        </button>
-        <button
-          onClick={onConfirm}
-          className="flex-1 py-2.5 rounded-2xl text-sm font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors"
-        >
+        <button onClick={onCancel} className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-colors border ${
+          dark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+        }`}>Cancel</button>
+        <button onClick={onConfirm} className="flex-1 py-2.5 rounded-2xl text-sm font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors">
           Delete
         </button>
       </div>
@@ -103,84 +76,174 @@ export const ConfirmDialog: React.FC<{
   </div>
 );
 
-// ── All Documents Modal ───────────────────────────────────────────────────────
+// ── QR Popup ──────────────────────────────────────────────────────────────────
 
-const AllDocsModal: React.FC<{
+const QRPopup: React.FC<{
+  dark: boolean; qrCodeDataUrl: string;
+  serverInfo: { ip: string; port: number } | null;
+  onClose: () => void;
+}> = ({ dark, qrCodeDataUrl, serverInfo, onClose }) => (
+  <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+    <div className={`relative z-10 w-full max-w-sm rounded-3xl shadow-2xl border overflow-hidden ${
+      dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200'
+    }`}>
+      <div className={`flex items-center justify-between px-6 py-4 border-b ${dark ? 'border-gray-700' : 'border-slate-100'}`}>
+        <div className="flex items-center gap-2">
+          <Smartphone size={16} className="text-blue-500" />
+          <h3 className={`font-bold text-base ${dark ? 'text-white' : 'text-slate-800'}`}>Connect Device</h3>
+        </div>
+        <button onClick={onClose} className={`p-1.5 rounded-full transition-colors ${dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-100 text-slate-500'}`}>
+          <X size={16} />
+        </button>
+      </div>
+      <div className="p-6 flex flex-col items-center gap-4">
+        <div className={`p-3 rounded-2xl ${dark ? 'bg-gray-800' : 'bg-slate-50'}`}>
+          {qrCodeDataUrl
+            ? <img src={qrCodeDataUrl} alt="QR Code" className="w-48 h-48 rounded-xl" />
+            : <div className="w-48 h-48 bg-slate-200 animate-pulse rounded-xl" />
+          }
+        </div>
+        <div className={`w-full flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-mono font-bold ${
+          dark ? 'bg-blue-900/40 text-blue-300' : 'bg-blue-50 text-blue-700'
+        }`}>
+          <Smartphone size={14} />
+          {serverInfo?.ip}:{serverInfo?.port}
+        </div>
+        <div className={`text-xs text-center leading-relaxed space-y-1 ${dark ? 'text-gray-400' : 'text-slate-500'}`}>
+          <p className="font-medium">How to connect your phone:</p>
+          <p>1. Make sure your phone and PC are on the same Wi-Fi network.</p>
+          <p>2. Open your phone camera and scan the QR code above.</p>
+          <p>3. The Edusaku app will connect automatically.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+// ── Library Modal (Google Drive style) ───────────────────────────────────────
+
+const LibraryModal: React.FC<{
   dark: boolean;
   uploads: UploadFile[];
+  isUploading: boolean;
+  uploadProgress: number;
+  onUploadClick: () => void;
+  onDrop: (e: React.DragEvent) => void;
   onDelete: (filename: string) => void;
   onClose: () => void;
-}> = ({ dark, uploads, onDelete, onClose }) => {
+}> = ({ dark, uploads, isUploading, uploadProgress, onUploadClick, onDrop, onDelete, onClose }) => {
   const [confirmFile, setConfirmFile] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const card = dark ? 'bg-gray-800 border-gray-700 hover:border-blue-500' : 'bg-white border-slate-200 hover:border-blue-300';
+  const sub = dark ? 'text-gray-400' : 'text-slate-500';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative z-10 w-full max-w-md rounded-3xl shadow-2xl border overflow-hidden ${
+      <div className={`relative z-10 w-full max-w-3xl rounded-3xl shadow-2xl border overflow-hidden flex flex-col ${
         dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200'
-      }`}>
-        <div className={`flex items-center justify-between px-6 py-4 border-b ${
-          dark ? 'border-gray-700' : 'border-slate-100'
-        }`}>
-          <h3 className={`font-bold text-base ${dark ? 'text-white' : 'text-slate-800'}`}>
-            All Documents ({uploads.length})
-          </h3>
-          <button
-            onClick={onClose}
-            className={`p-1.5 rounded-full transition-colors ${
-              dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-100 text-slate-500'
-            }`}
-          >
+      }`} style={{ maxHeight: '85vh' }}>
+
+        {/* Header */}
+        <div className={`flex items-center justify-between px-6 py-4 border-b shrink-0 ${dark ? 'border-gray-700' : 'border-slate-100'}`}>
+          <div className="flex items-center gap-2">
+            <FolderOpen size={18} className="text-blue-500" />
+            <h3 className={`font-bold text-base ${dark ? 'text-white' : 'text-slate-800'}`}>
+              Document Library
+              {uploads.length > 0 && <span className={`ml-2 text-sm font-normal ${sub}`}>({uploads.length} files)</span>}
+            </h3>
+          </div>
+          <button onClick={onClose} className={`p-1.5 rounded-full transition-colors ${dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-100 text-slate-500'}`}>
             <X size={16} />
           </button>
         </div>
-        <div className="overflow-y-auto max-h-96 p-4 space-y-2">
-          {uploads.map((file, i) => (
-            <div
-              key={i}
-              className={`flex items-center gap-3 p-3 rounded-2xl border transition-all group ${
-                dark ? 'border-gray-700 hover:border-gray-600' : 'border-slate-100 hover:border-slate-200'
-              }`}
-            >
-              <a
-                href={`/uploads/${file.name}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-3 flex-1 min-w-0 no-underline"
-              >
-                <div className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border ${
-                  dark ? 'bg-gray-800 border-gray-600' : 'bg-slate-100 border-slate-200'
-                }`}>
-                  {isImage(file.name) ? (
-                    <img src={`/uploads/${file.name}`} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className={`text-[10px] font-bold ${dark ? 'text-gray-400' : 'text-slate-500'}`}>
-                      {getFileExt(file.name)}
-                    </span>
-                  )}
+
+        {/* Upload zone */}
+        <div className="px-6 pt-4 pb-3 shrink-0">
+          <div
+            onClick={() => !isUploading && onUploadClick()}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { setDragOver(false); onDrop(e); }}
+            className={[
+              'border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all',
+              dragOver
+                ? (dark ? 'border-blue-400 bg-blue-900/30' : 'border-blue-400 bg-blue-50')
+                : (dark ? 'border-gray-600 hover:border-blue-500 hover:bg-gray-800/50' : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'),
+              isUploading ? 'pointer-events-none opacity-60' : '',
+            ].join(' ')}
+          >
+            {isUploading ? (
+              <div className="flex flex-col items-center gap-2">
+                <Upload size={20} className="text-blue-500 animate-bounce" />
+                <p className={`text-sm font-medium ${dark ? 'text-gray-300' : 'text-slate-600'}`}>Uploading… {uploadProgress}%</p>
+                <div className={`w-48 rounded-full h-1.5 overflow-hidden ${dark ? 'bg-gray-700' : 'bg-slate-200'}`}>
+                  <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium truncate ${dark ? 'text-gray-200' : 'text-slate-700'}`}>
-                    {getDisplayName(file.name)}
-                  </p>
-                  <p className={`text-[11px] mt-0.5 ${dark ? 'text-gray-500' : 'text-slate-400'}`}>
-                    {new Date(file.timestamp).toLocaleString('id-ID', {
-                      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                    })}
-                  </p>
-                </div>
-              </a>
-              <button
-                onClick={() => setConfirmFile(file.name)}
-                className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
-                  dark ? 'hover:bg-red-900/40 text-red-400' : 'hover:bg-red-50 text-red-500'
-                }`}
-                title="Delete document"
-              >
-                <Trash2 size={14} />
-              </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-3">
+                <Upload size={18} className={sub} />
+                <span className={`text-sm font-medium ${dark ? 'text-gray-300' : 'text-slate-600'}`}>
+                  {dragOver ? 'Drop to upload' : 'Click to upload or drag & drop'}
+                </span>
+                <span className={`text-xs ${sub}`}>PDF, Images</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Document grid */}
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          {uploads.length === 0 ? (
+            <div className={`flex flex-col items-center justify-center py-16 gap-3 ${sub}`}>
+              <FileImage size={40} className="opacity-30" />
+              <p className="text-sm">No documents yet. Upload your first file above.</p>
             </div>
-          ))}
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {uploads.map((file, i) => (
+                <div key={i} className={`group relative border rounded-2xl overflow-hidden transition-all cursor-pointer ${card}`}>
+                  <a href={`/uploads/${file.name}`} target="_blank" rel="noreferrer" className="block no-underline">
+                    {/* Thumbnail */}
+                    <div className={`aspect-[4/3] flex items-center justify-center ${dark ? 'bg-gray-700/50' : 'bg-slate-50'}`}>
+                      {isImage(file.name) ? (
+                        <img src={`/uploads/${file.name}`} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="flex flex-col items-center gap-2">
+                          <div className={`w-12 h-14 rounded-lg flex items-center justify-center ${dark ? 'bg-gray-600' : 'bg-slate-200'}`}>
+                            <span className={`text-xs font-bold ${dark ? 'text-gray-300' : 'text-slate-600'}`}>
+                              {getFileExt(file.name)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {/* Info */}
+                    <div className="p-2.5">
+                      <p className={`text-xs font-medium truncate ${dark ? 'text-gray-200' : 'text-slate-700'}`}>
+                        {getDisplayName(file.name)}
+                      </p>
+                      <p className={`text-[10px] mt-0.5 ${sub}`}>
+                        {new Date(file.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
+                      </p>
+                    </div>
+                  </a>
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => { e.preventDefault(); setConfirmFile(file.name); }}
+                    className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                      dark ? 'bg-gray-900/80 hover:bg-red-900/60 text-red-400' : 'bg-white/90 hover:bg-red-50 text-red-500'
+                    } shadow-sm`}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -197,17 +260,12 @@ const AllDocsModal: React.FC<{
   );
 };
 
-// ── Chat session row with context menu ────────────────────────────────────────
+// ── Chat Row ──────────────────────────────────────────────────────────────────
 
 const ChatRow: React.FC<{
-  dark: boolean;
-  session: ChatSession;
-  isActive: boolean;
-  onSelect: () => void;
-  onDelete: () => void;
-  onRename: (title: string) => void;
-  sub: string;
-  hoverBg: string;
+  dark: boolean; session: ChatSession; isActive: boolean;
+  onSelect: () => void; onDelete: () => void; onRename: (t: string) => void;
+  sub: string; hoverBg: string;
 }> = ({ dark, session, isActive, onSelect, onDelete, onRename, sub, hoverBg }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -218,22 +276,18 @@ const ChatRow: React.FC<{
 
   useEffect(() => {
     if (!menuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
+    const h = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
   }, [menuOpen]);
 
-  useEffect(() => {
-    if (editing) inputRef.current?.focus();
-  }, [editing]);
+  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
 
-  const commitRename = () => {
-    const trimmed = editValue.trim();
-    if (trimmed && trimmed !== session.title) onRename(trimmed);
+  const commit = () => {
+    const t = editValue.trim();
+    if (t && t !== session.title) onRename(t);
     setEditing(false);
   };
 
@@ -244,84 +298,50 @@ const ChatRow: React.FC<{
       }`}>
         {editing ? (
           <div className="flex items-center gap-1.5 flex-1 px-3 py-2">
-            <MessageSquare size={14} className="shrink-0 opacity-40" />
-            <input
-              ref={inputRef}
-              value={editValue}
+            <MessageSquare size={13} className="shrink-0 opacity-40" />
+            <input ref={inputRef} value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitRename();
-                if (e.key === 'Escape') { setEditing(false); setEditValue(session.title); }
-              }}
-              onBlur={commitRename}
-              className={`flex-1 text-xs font-medium bg-transparent outline-none border-b ${
-                dark ? 'text-white border-blue-400' : 'text-slate-800 border-blue-500'
-              }`}
+              onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setEditing(false); setEditValue(session.title); } }}
+              onBlur={commit}
+              className={`flex-1 text-xs bg-transparent outline-none border-b ${dark ? 'text-white border-blue-400' : 'text-slate-800 border-blue-500'}`}
             />
-            <button onClick={commitRename} className="text-blue-500">
-              <Check size={13} />
-            </button>
+            <button onClick={commit} className="text-blue-500"><Check size={12} /></button>
           </div>
         ) : (
-          <button
-            onClick={onSelect}
-            className="flex items-center gap-2.5 px-3 py-2.5 flex-1 min-w-0 text-left"
-          >
-            <MessageSquare size={14} className={`shrink-0 opacity-60 ${isActive ? (dark ? 'text-blue-300' : 'text-blue-600') : ''}`} />
+          <button onClick={onSelect} className="flex items-center gap-2 px-3 py-2.5 flex-1 min-w-0 text-left">
+            <MessageSquare size={13} className={`shrink-0 opacity-50 ${isActive ? (dark ? 'text-blue-300' : 'text-blue-600') : ''}`} />
             <div className="flex-1 min-w-0">
-              <p className={`text-xs font-medium truncate ${
-                isActive ? (dark ? 'text-blue-300' : 'text-blue-700') : (dark ? 'text-gray-300' : 'text-slate-700')
-              }`}>{session.title}</p>
-              <p className={`text-[10px] mt-0.5 ${sub}`}>
-                {new Date(session.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}
+              <p className={`text-xs font-medium truncate ${isActive ? (dark ? 'text-blue-300' : 'text-blue-700') : (dark ? 'text-gray-300' : 'text-slate-700')}`}>
+                {session.title}
               </p>
             </div>
           </button>
         )}
-
         {!editing && (
           <div className="relative pr-1.5" ref={menuRef}>
             <button
-              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
-              className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
-                dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-200 text-slate-500'
-              } ${menuOpen ? 'opacity-100' : ''}`}
+              onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v); }}
+              className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${menuOpen ? 'opacity-100' : ''} ${dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-200 text-slate-500'}`}
             >
-              <MoreVertical size={13} />
+              <MoreVertical size={12} />
             </button>
-
             {menuOpen && (
-              <div className={`absolute right-0 top-8 z-50 w-36 rounded-2xl shadow-xl border overflow-hidden ${
-                dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'
-              }`}>
-                <button
-                  onClick={() => { setMenuOpen(false); setEditing(true); setEditValue(session.title); }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs transition-colors ${
-                    dark ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  <Pencil size={13} />
-                  Rename
+              <div className={`absolute right-0 top-8 z-50 w-32 rounded-2xl shadow-xl border overflow-hidden ${dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'}`}>
+                <button onClick={() => { setMenuOpen(false); setEditing(true); setEditValue(session.title); }}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs transition-colors ${dark ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-slate-50 text-slate-700'}`}>
+                  <Pencil size={12} /> Rename
                 </button>
-                <button
-                  onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs transition-colors ${
-                    dark ? 'hover:bg-red-900/40 text-red-400' : 'hover:bg-red-50 text-red-600'
-                  }`}
-                >
-                  <Trash2 size={13} />
-                  Delete
+                <button onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs transition-colors ${dark ? 'hover:bg-red-900/40 text-red-400' : 'hover:bg-red-50 text-red-600'}`}>
+                  <Trash2 size={12} /> Delete
                 </button>
               </div>
             )}
           </div>
         )}
       </div>
-
       {confirmDelete && (
-        <ConfirmDialog
-          dark={dark}
-          title="Delete Chat"
+        <ConfirmDialog dark={dark} title="Delete Chat"
           message={`"${session.title}" and all its messages will be permanently deleted.`}
           onConfirm={() => { setConfirmDelete(false); onDelete(); }}
           onCancel={() => setConfirmDelete(false)}
@@ -334,229 +354,146 @@ const ChatRow: React.FC<{
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 const Sidebar: React.FC<SidebarProps> = ({
-  dark, isOpen, onClose,
+  dark, isOpen, onOpen, onClose,
   qrCodeDataUrl, serverInfo,
   uploads, isUploading, uploadProgress, onUploadClick, onDrop, onDeleteUpload,
   sessions, activeChatId, onNewChat, onSelectChat, onDeleteChat, onRenameChat,
-  onRefreshUploads,
 }) => {
-  const [showAllDocs, setShowAllDocs] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-  const [confirmDocFile, setConfirmDocFile] = useState<string | null>(null);
+  const [showQR, setShowQR] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
 
-  const topUploads = uploads.slice(0, 3);
-
-  const base = dark ? 'bg-gray-900 border-gray-700/60 text-white' : 'bg-white border-slate-200 text-slate-900';
+  const railBg = dark ? 'bg-gray-900 border-gray-700/60' : 'bg-white border-slate-200';
+  const panelBg = dark ? 'bg-gray-900 border-gray-700/60' : 'bg-white border-slate-200';
   const sub = dark ? 'text-gray-500' : 'text-slate-400';
   const divider = dark ? 'border-gray-700/60' : 'border-slate-100';
   const hoverBg = dark ? 'hover:bg-gray-800' : 'hover:bg-slate-50';
-  const sectionLabel = dark ? 'text-gray-500' : 'text-slate-400';
+  const iconBtn = `p-2.5 rounded-xl transition-all flex items-center justify-center ${hoverBg} ${sub}`;
 
   return (
     <>
-      {/* Mobile overlay */}
-      {isOpen && (
-        <div className="fixed inset-0 z-20 bg-black/30 lg:hidden" onClick={onClose} />
-      )}
+      {/* ── Icon rail (always visible) ── */}
+      <div className={`fixed top-14 left-0 z-30 w-14 flex flex-col items-center py-3 gap-1 border-r ${railBg}`}
+        style={{ height: 'calc(100vh - 3.5rem)' }}>
 
-      <aside className={`
-        fixed top-14 left-0 z-30 w-72 flex flex-col border-r shadow-xl
-        transition-transform duration-300 ease-in-out
-        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-        ${base}
-      `} style={{ height: 'calc(100vh - 3.5rem)' }}>
+        {/* Open sidebar toggle */}
+        <button
+          onClick={isOpen ? onClose : onOpen}
+          className={`${iconBtn} ${isOpen ? (dark ? 'bg-gray-800 text-white' : 'bg-slate-100 text-slate-800') : ''}`}
+          title={isOpen ? 'Close sidebar' : 'Open sidebar'}
+        >
+          <PanelLeftOpen size={18} />
+        </button>
 
-        {/* ── Section 1: Connect Device ── */}
-        <div className={`px-4 pt-4 pb-4 border-b ${divider}`}>
-          {/* Row: label + close button */}
-          <div className="flex items-center justify-between mb-3">
-            <p className={`text-[10px] font-bold uppercase tracking-widest ${sectionLabel}`}>
-              Connect Device
-            </p>
-            <button
-              onClick={onClose}
-              className={`p-1.5 rounded-full transition-colors ${hoverBg} ${sub}`}
-              title="Close sidebar"
-            >
-              <PanelLeftClose size={15} />
-            </button>
+        <div className={`w-8 h-px my-1 ${dark ? 'bg-gray-700' : 'bg-slate-200'}`} />
+
+        {/* New chat */}
+        <button onClick={onNewChat} className={iconBtn} title="New Chat">
+          <Plus size={18} />
+        </button>
+
+        {/* Connect device */}
+        <button onClick={() => setShowQR(true)} className={iconBtn} title="Connect Device">
+          <QrCode size={18} />
+        </button>
+
+        {/* Library */}
+        <button onClick={() => setShowLibrary(true)} className={iconBtn} title="Document Library">
+          <Grid3X3 size={18} />
+        </button>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Chat count badge */}
+        {sessions.length > 0 && (
+          <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${dark ? 'bg-gray-700 text-gray-400' : 'bg-slate-100 text-slate-500'}`}>
+            {sessions.length}
           </div>
+        )}
+      </div>
 
-          <div className={`flex justify-center mb-3 p-2 rounded-2xl ${dark ? 'bg-gray-800' : 'bg-slate-50'}`}>
-            {qrCodeDataUrl
-              ? <img src={qrCodeDataUrl} alt="QR" className="w-36 h-36 rounded-lg" />
-              : <div className="w-36 h-36 bg-slate-200 animate-pulse rounded-lg" />
-            }
-          </div>
-          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-mono font-bold ${
-            dark ? 'bg-blue-900/40 text-blue-300' : 'bg-blue-50 text-blue-700'
-          }`}>
-            <Smartphone size={13} />
-            {serverInfo?.ip}:{serverInfo?.port}
-          </div>
-          <p className={`text-[10px] mt-2 leading-relaxed ${sub}`}>
-            Scan QR dari HP untuk mengirim foto dokumen ke PC ini.
-          </p>
-        </div>
-
+      {/* ── Full sidebar panel ── */}
+      <aside
+        className={`fixed top-14 left-14 z-30 w-60 flex flex-col border-r shadow-xl transition-all duration-300 ease-in-out ${panelBg} ${
+          isOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'
+        }`}
+        style={{ height: 'calc(100vh - 3.5rem)' }}
+      >
         <div className="flex-1 overflow-y-auto">
 
-          {/* ── Section 2: Upload Document ── */}
-          <div className={`px-4 pt-4 pb-4 border-b ${divider}`}>
-            <p className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${sectionLabel}`}>
-              Upload Document
-            </p>
-
-            <div
-              onClick={() => !isUploading && onUploadClick()}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { setDragOver(false); onDrop(e); }}
-              className={[
-                'border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all',
-                dragOver
-                  ? (dark ? 'border-blue-400 bg-blue-900/30' : 'border-blue-400 bg-blue-50')
-                  : (dark ? 'border-gray-600 hover:border-blue-500 hover:bg-gray-800' : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'),
-                isUploading ? 'pointer-events-none opacity-60' : '',
-              ].join(' ')}
-            >
-              {isUploading ? (
-                <div className="flex flex-col items-center gap-2">
-                  <Upload size={16} className="text-blue-500 animate-bounce" />
-                  <p className={`text-xs font-medium ${dark ? 'text-gray-300' : 'text-slate-600'}`}>{uploadProgress}%</p>
-                  <div className={`w-full rounded-full h-1 overflow-hidden ${dark ? 'bg-gray-700' : 'bg-slate-200'}`}>
-                    <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-1.5">
-                  <Upload size={16} className={sub} />
-                  <p className={`text-xs font-medium ${dark ? 'text-gray-300' : 'text-slate-600'}`}>
-                    {dragOver ? 'Drop here' : 'Click or drag file'}
-                  </p>
-                  <p className={`text-[10px] ${sub}`}>Images & PDF</p>
-                </div>
-              )}
+          {/* Chats section */}
+          <div className="px-3 pt-4 pb-3">
+            <div className={`flex items-center justify-between mb-2 px-1`}>
+              <span className={`text-[10px] font-bold uppercase tracking-widest ${sub}`}>Chats</span>
             </div>
-
-            {/* Top 3 uploads with delete */}
-            {topUploads.length > 0 && (
-              <div className="mt-3 space-y-1">
-                {topUploads.map((file, i) => (
-                  <div key={i} className={`group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all ${hoverBg}`}>
-                    <a
-                      href={`/uploads/${file.name}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-2 flex-1 min-w-0 no-underline"
-                    >
-                      <div className={`w-8 h-8 rounded-lg overflow-hidden shrink-0 flex items-center justify-center ${
-                        dark ? 'bg-gray-700' : 'bg-slate-100'
-                      }`}>
-                        {isImage(file.name)
-                          ? <img src={`/uploads/${file.name}`} alt="" className="w-full h-full object-cover" />
-                          : <span className={`text-[9px] font-bold ${dark ? 'text-gray-400' : 'text-slate-500'}`}>{getFileExt(file.name)}</span>
-                        }
-                      </div>
-                      <p className={`text-xs font-medium truncate flex-1 ${dark ? 'text-gray-200' : 'text-slate-700'}`}>
-                        {getDisplayName(file.name)}
-                      </p>
-                    </a>
-                    <button
-                      onClick={() => setConfirmDocFile(file.name)}
-                      className={`p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-all shrink-0 ${
-                        dark ? 'hover:bg-red-900/40 text-red-400' : 'hover:bg-red-50 text-red-500'
-                      }`}
-                      title="Delete"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                ))}
-
-                {uploads.length > 3 && (
-                  <button
-                    onClick={() => setShowAllDocs(true)}
-                    className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium transition-colors ${
-                      dark ? 'text-blue-400 hover:bg-gray-800' : 'text-blue-600 hover:bg-blue-50'
-                    }`}
-                  >
-                    <MoreHorizontal size={14} />
-                    {uploads.length - 3} more documents
-                  </button>
-                )}
-              </div>
-            )}
-
-            {uploads.length === 0 && (
-              <div className={`flex items-center justify-center gap-1.5 mt-3 py-2 text-xs ${sub}`}>
-                <FileImage size={13} />
-                No documents yet
-              </div>
-            )}
-
-            <button
-              onClick={onRefreshUploads}
-              className={`mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-[11px] transition-colors ${sub} ${hoverBg}`}
-            >
-              <RefreshCcw size={11} />
-              Refresh
-            </button>
-          </div>
-
-          {/* ── Section 3: Chat Sessions ── */}
-          <div className="px-4 pt-4 pb-4">
-            <p className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${sectionLabel}`}>
-              Chats
-            </p>
 
             <button
               onClick={onNewChat}
-              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors mb-3"
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors mb-2 ${
+                dark ? 'text-gray-300 hover:bg-gray-800 border border-gray-700' : 'text-slate-600 hover:bg-slate-50 border border-slate-200'
+              }`}
             >
-              <Plus size={16} />
+              <Plus size={14} />
               New Chat
             </button>
 
             <div className="space-y-0.5">
               {sessions.length === 0 ? (
-                <p className={`text-xs text-center py-4 ${sub}`}>No chat history yet</p>
+                <p className={`text-xs text-center py-4 ${sub}`}>No chats yet</p>
               ) : (
                 sessions.map((s) => (
                   <ChatRow
-                    key={s.id}
-                    dark={dark}
-                    session={s}
+                    key={s.id} dark={dark} session={s}
                     isActive={activeChatId === s.id}
                     onSelect={() => onSelectChat(s.id)}
                     onDelete={() => onDeleteChat(s.id)}
-                    onRename={(title) => onRenameChat(s.id, title)}
-                    sub={sub}
-                    hoverBg={hoverBg}
+                    onRename={(t) => onRenameChat(s.id, t)}
+                    sub={sub} hoverBg={hoverBg}
                   />
                 ))
               )}
             </div>
           </div>
+
+          {/* Divider */}
+          <div className={`mx-3 h-px ${dark ? 'bg-gray-700/60' : 'bg-slate-100'}`} />
+
+          {/* Quick actions */}
+          <div className="px-3 py-3 space-y-1">
+            <button
+              onClick={() => setShowQR(true)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-colors ${hoverBg} ${dark ? 'text-gray-400' : 'text-slate-500'}`}
+            >
+              <Smartphone size={14} />
+              Connect Device
+            </button>
+            <button
+              onClick={() => setShowLibrary(true)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-colors ${hoverBg} ${dark ? 'text-gray-400' : 'text-slate-500'}`}
+            >
+              <FolderOpen size={14} />
+              Document Library
+              {uploads.length > 0 && (
+                <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${dark ? 'bg-gray-700 text-gray-400' : 'bg-slate-100 text-slate-500'}`}>
+                  {uploads.length}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </aside>
 
-      {showAllDocs && (
-        <AllDocsModal
-          dark={dark}
-          uploads={uploads}
-          onDelete={onDeleteUpload}
-          onClose={() => setShowAllDocs(false)}
-        />
+      {/* ── Modals ── */}
+      {showQR && (
+        <QRPopup dark={dark} qrCodeDataUrl={qrCodeDataUrl} serverInfo={serverInfo} onClose={() => setShowQR(false)} />
       )}
-
-      {confirmDocFile && (
-        <ConfirmDialog
-          dark={dark}
-          title="Delete Document"
-          message={`"${getDisplayName(confirmDocFile)}" will be permanently deleted.`}
-          onConfirm={() => { onDeleteUpload(confirmDocFile); setConfirmDocFile(null); }}
-          onCancel={() => setConfirmDocFile(null)}
+      {showLibrary && (
+        <LibraryModal
+          dark={dark} uploads={uploads}
+          isUploading={isUploading} uploadProgress={uploadProgress}
+          onUploadClick={onUploadClick} onDrop={onDrop}
+          onDelete={onDeleteUpload}
+          onClose={() => setShowLibrary(false)}
         />
       )}
     </>
