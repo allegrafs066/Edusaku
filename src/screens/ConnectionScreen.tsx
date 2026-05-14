@@ -7,15 +7,21 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
-import { CameraScreen } from 'react-native-camera-kit';
+import { Camera } from 'react-native-camera-kit';
 import { useNavigation } from '@react-navigation/native';
 import { saveServerUrl, getServerUrl } from '../utils/storage';
 import { pingServer } from '../services/NetworkService';
-import { LightColors } from '../theme/colors';
+import { useColors } from '../theme/colors';
+import { Typography } from '../theme/typography';
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 const ConnectionScreen = () => {
   const navigation = useNavigation<any>();
+  const colors = useColors();
+
   const [ipAddress, setIpAddress] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -29,6 +35,7 @@ const ConnectionScreen = () => {
     const url = await getServerUrl();
     if (url) {
       setSavedUrl(url);
+      // Pre-fill IP field from saved URL
       setIpAddress(url.replace('http://', '').split(':')[0]);
     }
   };
@@ -38,10 +45,14 @@ const ConnectionScreen = () => {
     try {
       const data = await pingServer(url);
       await saveServerUrl(url);
-      Alert.alert('Connected', `Successfully connected to ${data.message}`);
-      navigation.navigate('Home');
-    } catch (error) {
-      Alert.alert('Connection Failed', 'Could not connect to the server. Make sure you are on the same network.');
+      Alert.alert('Connected ✓', `Connected to ${data.message}`, [
+        { text: 'OK', onPress: () => navigation.navigate('Home') },
+      ]);
+    } catch {
+      Alert.alert(
+        'Connection Failed',
+        'Could not reach the server. Make sure your phone and PC are on the same WiFi network.',
+      );
     } finally {
       setIsConnecting(false);
       setIsScanning(false);
@@ -49,163 +60,197 @@ const ConnectionScreen = () => {
   };
 
   const onReadCode = (event: any) => {
-    const url = event.nativeEvent.codeStringValue;
+    const url: string = event.nativeEvent.codeStringValue;
     if (url.startsWith('http://')) {
       handleConnect(url);
     } else {
-      Alert.alert('Invalid QR Code', 'The scanned code is not a valid Edusaku server URL.');
+      Alert.alert('Invalid QR Code', 'This QR code is not an Edusaku server URL.');
     }
   };
 
+  // ── QR Scanner view ────────────────────────────────────────────────────────
+
   if (isScanning) {
     return (
-      <View style={styles.container}>
-        <CameraScreen
-          showFrame={true}
-          scanBarcode={true}
+      <View style={styles.scannerContainer}>
+        <Camera
+          style={StyleSheet.absoluteFill}
+          scanBarcode
           onReadCode={onReadCode}
+          showFrame
           frameColor="white"
-          colorForScannerFrame="black"
+          laserColor="transparent"
         />
         <TouchableOpacity
-          style={styles.cancelButton}
+          style={[styles.cancelButton, { backgroundColor: colors.overlay }]}
           onPress={() => setIsScanning(false)}
         >
-          <Text style={styles.buttonText}>Cancel</Text>
+          <Text style={[Typography.labelMedium, { color: '#FFFFFF' }]}>Cancel</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  // ── Main view ──────────────────────────────────────────────────────────────
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Connect to PC</Text>
-      <Text style={styles.subtitle}>
-        Scan the QR code on your PC server or enter the IP address manually.
-      </Text>
-
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Server IP Address</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. 192.168.1.5"
-          value={ipAddress}
-          onChangeText={setIpAddress}
-          keyboardType="numeric"
-        />
-      </View>
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={() => handleConnect(`http://${ipAddress}:3000`)}
-        disabled={isConnecting || !ipAddress}
-      >
-        {isConnecting ? (
-          <ActivityIndicator color="white" />
-        ) : (
-          <Text style={styles.buttonText}>Connect Manually</Text>
-        )}
-      </TouchableOpacity>
-
-      <View style={styles.divider}>
-        <View style={styles.line} />
-        <Text style={styles.dividerText}>OR</Text>
-        <View style={styles.line} />
-      </View>
-
-      <TouchableOpacity
-        style={[styles.button, styles.qrButton]}
-        onPress={() => setIsScanning(true)}
-      >
-        <Text style={styles.buttonText}>Scan QR Code</Text>
-      </TouchableOpacity>
-
-      {savedUrl && (
-        <Text style={styles.statusText}>
-          Last connected: {savedUrl}
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.inner}>
+        {/* Header text */}
+        <Text style={[Typography.heading3, styles.title, { color: colors.textPrimary }]}>
+          Connect to PC
         </Text>
-      )}
-    </View>
+        <Text style={[Typography.bodySmall, styles.subtitle, { color: colors.textSecondary }]}>
+          Scan the QR code shown on your PC, or enter the IP address manually.
+        </Text>
+
+        {/* IP input */}
+        <View style={styles.inputGroup}>
+          <Text style={[Typography.labelSmall, styles.label, { color: colors.textSecondary }]}>
+            SERVER IP ADDRESS
+          </Text>
+          <TextInput
+            style={[
+              Typography.bodyMedium,
+              styles.input,
+              {
+                color: colors.textPrimary,
+                backgroundColor: colors.inputBackground,
+                borderColor: colors.border,
+              },
+            ]}
+            placeholder="e.g. 192.168.1.5"
+            placeholderTextColor={colors.textSecondary}
+            value={ipAddress}
+            onChangeText={setIpAddress}
+            keyboardType="numeric"
+            returnKeyType="done"
+            onSubmitEditing={() => {
+              if (ipAddress) handleConnect(`http://${ipAddress}:3000`);
+            }}
+          />
+        </View>
+
+        {/* Connect button */}
+        <TouchableOpacity
+          style={[
+            styles.button,
+            { backgroundColor: ipAddress && !isConnecting ? colors.primary : colors.border },
+          ]}
+          onPress={() => handleConnect(`http://${ipAddress}:3000`)}
+          disabled={isConnecting || !ipAddress}
+          accessibilityRole="button"
+          accessibilityLabel="Connect to server"
+        >
+          {isConnecting ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Text style={[Typography.labelMedium, { color: '#FFFFFF' }]}>Connect</Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Divider */}
+        <View style={styles.divider}>
+          <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          <Text style={[Typography.caption, styles.dividerText, { color: colors.textSecondary }]}>
+            OR
+          </Text>
+          <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+        </View>
+
+        {/* QR scan button */}
+        <TouchableOpacity
+          style={[styles.button, styles.qrButton, { borderColor: colors.primary }]}
+          onPress={() => setIsScanning(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Scan QR code"
+        >
+          <Text style={[Typography.labelMedium, { color: colors.primary }]}>
+            📷  Scan QR Code
+          </Text>
+        </TouchableOpacity>
+
+        {/* Last connected */}
+        {savedUrl && (
+          <Text style={[Typography.caption, styles.savedUrl, { color: colors.textSecondary }]}>
+            Last connected: {savedUrl}
+          </Text>
+        )}
+      </View>
+    </SafeAreaView>
   );
 };
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: 'white',
+  },
+  inner: {
+    flex: 1,
+    paddingHorizontal: 28,
     justifyContent: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#333',
+    marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 30,
     textAlign: 'center',
+    marginBottom: 36,
+    lineHeight: 20,
   },
-  inputContainer: {
-    marginBottom: 20,
+  inputGroup: {
+    marginBottom: 16,
   },
   label: {
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 5,
+    marginBottom: 6,
+    letterSpacing: 0.5,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   button: {
-    backgroundColor: LightColors.primary,
-    padding: 15,
-    borderRadius: 8,
+    borderRadius: 14,
+    paddingVertical: 15,
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   qrButton: {
-    backgroundColor: '#333',
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  cancelButton: {
-    position: 'absolute',
-    bottom: 50,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 15,
-    borderRadius: 30,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
   },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 20,
+    marginVertical: 16,
   },
-  line: {
+  dividerLine: {
     flex: 1,
-    height: 1,
-    backgroundColor: '#ddd',
+    height: StyleSheet.hairlineWidth,
   },
   dividerText: {
-    marginHorizontal: 10,
-    color: '#999',
+    marginHorizontal: 12,
   },
-  statusText: {
-    marginTop: 20,
-    fontSize: 12,
-    color: '#999',
+  savedUrl: {
+    marginTop: 24,
     textAlign: 'center',
+  },
+  // QR scanner
+  scannerContainer: {
+    flex: 1,
+  },
+  cancelButton: {
+    position: 'absolute',
+    bottom: 48,
+    alignSelf: 'center',
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 30,
   },
 });
 
