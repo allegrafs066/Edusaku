@@ -74,3 +74,8 @@ build.log
 # ─── Misc ─────────────────────────────────────────────────────────────────────
 .buck/
 buck-out/
+
+# ─── ML Models (too large for git) ───────────────────────────────────────────
+*.gguf
+*.ggml
+server/models/*.gguf
