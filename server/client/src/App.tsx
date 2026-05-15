@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import QRCode from 'qrcode';
-import { Sun, Moon, HardDrive } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import ChatArea, { Message } from './ChatArea';
@@ -192,6 +192,19 @@ const App: React.FC = () => {
   const [input, setInput] = useState('');
   const [isChatting, setIsChatting] = useState(false);
 
+  const handleRetry = useCallback(async () => {
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+  if (!lastUserMsg || isChatting || !activeChatId) return;
+  setSessions(prev =>
+    prev.map(s =>
+      s.id === activeChatId
+        ? { ...s, messages: s.messages.slice(0, -1) }
+        : s
+    )
+  );
+  setInput(lastUserMsg.content);
+}, [messages, isChatting, activeChatId]);
+
   const handleSend = async () => {
     if (!input.trim() || isChatting || !activeChatId) return;
 
@@ -220,6 +233,9 @@ const App: React.FC = () => {
     try {
       const res = await axios.post('/chat', { prompt: userText + fileContext });
       const assistantMsg: Message = { role: 'assistant', content: res.data.response };
+
+      // Stop typing indicator BEFORE appending response — prevents flash
+      setIsChatting(false);
 
       setSessions((prev) =>
         prev.map((s) =>
@@ -262,8 +278,9 @@ const App: React.FC = () => {
           s.id === activeChatId ? { ...s, messages: [...s.messages, errMsg] } : s,
         ),
       );
-    } finally {
       setIsChatting(false);
+    } finally {
+      // isChatting already set to false above on success; only reaches here on error path
     }
   };
 
@@ -276,13 +293,10 @@ const App: React.FC = () => {
   }, [fetchServerInfo, fetchUploads]);
 
   // ── Styles ─────────────────────────────────────────────────────────────────
-  const headerBg = dark
-    ? 'bg-gray-900 border-gray-700/60'
-    : 'bg-gradient-to-r from-blue-700 to-blue-600 border-blue-800/20';
-  const appBg = dark ? 'bg-gray-950' : 'bg-slate-100';
+  const appBg = dark ? 'bg-gray-950' : 'bg-slate-50';
 
   return (
-    <div className={`min-h-screen flex flex-col ${appBg} transition-colors duration-200`}>
+    <div className={`h-screen flex flex-col ${appBg} transition-colors duration-200`}>
 
       {showOnboarding && (
         <Onboarding dark={dark} onDone={handleOnboardingDone} />
@@ -296,39 +310,22 @@ const App: React.FC = () => {
         onChange={handleFileChange}
       />
 
-      {/* ── Header ── */}
-      <header className={`h-14 flex items-center justify-between px-4 border-b shadow-sm sticky top-0 z-40 ${headerBg}`}>
-        {/* Left: logo */}
-        <div className="flex items-center gap-2 z-10 pl-14">
-          <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center">
-            <HardDrive size={15} className="text-white" />
-          </div>
-          <span className="font-bold text-base tracking-tight text-white">Edusaku PC</span>
-        </div>
+      {/* ── Floating dark mode toggle — fixed top-right ── */}
+      <button
+        onClick={() => setDark((v) => !v)}
+        className={`fixed top-4 right-4 z-50 w-9 h-9 flex items-center justify-center rounded-xl shadow-lg transition-colors ${
+          dark
+            ? 'bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700'
+            : 'bg-white hover:bg-slate-50 text-slate-600 border border-slate-200'
+        }`}
+        title={dark ? 'Light mode' : 'Dark mode'}
+      >
+        {dark ? <Sun size={16} /> : <Moon size={16} />}
+      </button>
 
-        {/* Center: active session title */}
-        {activeSession && activeSession.title !== 'New Chat' && (
-          <div className="absolute left-0 right-0 flex justify-center pointer-events-none">
-            <span className="text-sm font-medium text-white/80 max-w-xs truncate px-4 text-center">
-              {activeSession.title}
-            </span>
-          </div>
-        )}
-
-        {/* Right: dark mode toggle */}
-        <div className="flex items-center gap-2 z-10">
-          <button
-            onClick={() => setDark((v) => !v)}
-            className="p-2 rounded-xl hover:bg-white/10 transition-colors text-white"
-            title={dark ? 'Light mode' : 'Dark mode'}
-          >
-            {dark ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-        </div>
-      </header>
-
-      {/* ── Body ── */}
-      <div className="flex flex-1 overflow-hidden relative">
+      {/* ── Body: sidebar + chat, full height, no header ── */}
+      {/* min-h-0 is critical: allows flex children to shrink below their content size */}
+      <div className="flex flex-1 overflow-hidden min-h-0">
         <Sidebar
           dark={dark}
           isOpen={sidebarOpen}
@@ -350,8 +347,10 @@ const App: React.FC = () => {
           onRenameChat={handleRenameChat}
         />
 
-        <main className="flex-1 flex flex-col overflow-hidden transition-all duration-300"
-          style={{ marginLeft: sidebarOpen ? '16rem' : '3.5rem' }}>
+        <main
+          className="flex-1 flex flex-col overflow-hidden transition-all duration-300 min-h-0"
+          style={{ marginLeft: sidebarOpen ? '16rem' : '3.5rem' }}
+        >
           <ChatArea
             dark={dark}
             messages={messages}
@@ -360,6 +359,8 @@ const App: React.FC = () => {
             onInputChange={setInput}
             onSend={handleSend}
             onUploadClick={() => fileInputRef.current?.click()}
+            sessionTitle={activeSession?.title}
+            onRetry={handleRetry}
           />
         </main>
       </div>
