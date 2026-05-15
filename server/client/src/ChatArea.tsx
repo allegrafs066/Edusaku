@@ -96,10 +96,8 @@ const AutoTextarea: React.FC<{
       }}
       placeholder="Ask Gemma 4…"
       autoFocus={autoFocus}
-      className={`flex-1 resize-none rounded-2xl py-3 px-4 text-sm outline-none transition-all focus:ring-2 focus:ring-blue-500/20 border overflow-y-auto leading-relaxed ${
-        dark
-          ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500 focus:border-blue-500'
-          : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400 focus:border-blue-400'
+      className={`w-full resize-none py-2 px-1 text-sm outline-none overflow-y-auto leading-relaxed bg-transparent ${
+        dark ? 'text-white placeholder-gray-500' : 'text-slate-900 placeholder-slate-400'
       }`}
       style={{ maxHeight: '200px', minHeight: '46px' }}
     />
