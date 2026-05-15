@@ -100,13 +100,21 @@ const App: React.FC = () => {
         },
       });
       await fetchUploads();
+      // Auto-attach to active session and show file card in chat
       if (activeChatId) {
+        const displayName = file.name; // will be cleaned in ChatArea
         setSessions((prev) =>
-          prev.map((s) =>
-            s.id === activeChatId
-              ? { ...s, attachedFiles: Array.from(new Set([...s.attachedFiles, file.name])) }
-              : s,
-          ),
+          prev.map((s) => {
+            if (s.id !== activeChatId) return s;
+            const updatedFiles = Array.from(new Set([...s.attachedFiles, file.name]));
+            // Add a system message showing the file was attached
+            const fileMsg = {
+              role: 'user' as const,
+              content: `I've uploaded a document for you to analyze.`,
+              attachedFile: file.name.split('-').slice(2).join('-') || file.name,
+            };
+            return { ...s, attachedFiles: updatedFiles, messages: [...s.messages, fileMsg] };
+          }),
         );
       }
     } catch (err) {
@@ -342,9 +350,8 @@ const App: React.FC = () => {
           onRenameChat={handleRenameChat}
         />
 
-        <main className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${
-          sidebarOpen ? 'ml-[14rem+3.5rem]' : 'ml-14'
-        }`} style={{ marginLeft: sidebarOpen ? '14rem' : '3.5rem' }}>
+        <main className="flex-1 flex flex-col overflow-hidden transition-all duration-300"
+          style={{ marginLeft: sidebarOpen ? '16rem' : '3.5rem' }}>
           <ChatArea
             dark={dark}
             messages={messages}
@@ -352,6 +359,7 @@ const App: React.FC = () => {
             isChatting={isChatting}
             onInputChange={setInput}
             onSend={handleSend}
+            onUploadClick={() => fileInputRef.current?.click()}
           />
         </main>
       </div>

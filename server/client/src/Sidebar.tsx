@@ -1,10 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Smartphone, Upload, FileImage, Plus, MessageSquare, X,
-  Trash2, PanelLeftOpen, MoreVertical, Pencil, Check,
+  Trash2, PanelLeftOpen, PanelLeftClose, MoreVertical, Pencil, Check,
   AlertTriangle, FolderOpen, QrCode, Grid3X3,
 } from 'lucide-react';
-import axios from 'axios';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -34,14 +33,14 @@ interface SidebarProps {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const getDisplayName = (filename: string) => {
-  const parts = filename.split('-');
-  return parts.length > 2 ? parts.slice(2).join('-') : filename;
+const getDisplayName = (f: string) => {
+  const p = f.split('-');
+  return p.length > 2 ? p.slice(2).join('-') : f;
 };
 const isImage = (f: string) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(f);
 const getFileExt = (f: string) => {
-  const ext = f.split('.').pop()?.toUpperCase() || 'FILE';
-  return ext.length > 4 ? 'FILE' : ext;
+  const e = f.split('.').pop()?.toUpperCase() || 'FILE';
+  return e.length > 4 ? 'FILE' : e;
 };
 
 // ── Confirm Dialog ────────────────────────────────────────────────────────────
@@ -121,22 +120,16 @@ const QRPopup: React.FC<{
   </div>
 );
 
-// ── Library Modal (Google Drive style) ───────────────────────────────────────
+// ── Library Modal ─────────────────────────────────────────────────────────────
 
 const LibraryModal: React.FC<{
-  dark: boolean;
-  uploads: UploadFile[];
-  isUploading: boolean;
-  uploadProgress: number;
-  onUploadClick: () => void;
-  onDrop: (e: React.DragEvent) => void;
-  onDelete: (filename: string) => void;
-  onClose: () => void;
+  dark: boolean; uploads: UploadFile[];
+  isUploading: boolean; uploadProgress: number;
+  onUploadClick: () => void; onDrop: (e: React.DragEvent) => void;
+  onDelete: (f: string) => void; onClose: () => void;
 }> = ({ dark, uploads, isUploading, uploadProgress, onUploadClick, onDrop, onDelete, onClose }) => {
   const [confirmFile, setConfirmFile] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-
-  const card = dark ? 'bg-gray-800 border-gray-700 hover:border-blue-500' : 'bg-white border-slate-200 hover:border-blue-300';
   const sub = dark ? 'text-gray-400' : 'text-slate-500';
 
   return (
@@ -145,22 +138,18 @@ const LibraryModal: React.FC<{
       <div className={`relative z-10 w-full max-w-3xl rounded-3xl shadow-2xl border overflow-hidden flex flex-col ${
         dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200'
       }`} style={{ maxHeight: '85vh' }}>
-
-        {/* Header */}
         <div className={`flex items-center justify-between px-6 py-4 border-b shrink-0 ${dark ? 'border-gray-700' : 'border-slate-100'}`}>
           <div className="flex items-center gap-2">
             <FolderOpen size={18} className="text-blue-500" />
             <h3 className={`font-bold text-base ${dark ? 'text-white' : 'text-slate-800'}`}>
               Document Library
-              {uploads.length > 0 && <span className={`ml-2 text-sm font-normal ${sub}`}>({uploads.length} files)</span>}
+              {uploads.length > 0 && <span className={`ml-2 text-sm font-normal ${sub}`}>({uploads.length})</span>}
             </h3>
           </div>
           <button onClick={onClose} className={`p-1.5 rounded-full transition-colors ${dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-100 text-slate-500'}`}>
             <X size={16} />
           </button>
         </div>
-
-        {/* Upload zone */}
         <div className="px-6 pt-4 pb-3 shrink-0">
           <div
             onClick={() => !isUploading && onUploadClick()}
@@ -169,8 +158,7 @@ const LibraryModal: React.FC<{
             onDrop={(e) => { setDragOver(false); onDrop(e); }}
             className={[
               'border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all',
-              dragOver
-                ? (dark ? 'border-blue-400 bg-blue-900/30' : 'border-blue-400 bg-blue-50')
+              dragOver ? (dark ? 'border-blue-400 bg-blue-900/30' : 'border-blue-400 bg-blue-50')
                 : (dark ? 'border-gray-600 hover:border-blue-500 hover:bg-gray-800/50' : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'),
               isUploading ? 'pointer-events-none opacity-60' : '',
             ].join(' ')}
@@ -194,49 +182,40 @@ const LibraryModal: React.FC<{
             )}
           </div>
         </div>
-
-        {/* Document grid */}
         <div className="flex-1 overflow-y-auto px-6 pb-6">
           {uploads.length === 0 ? (
             <div className={`flex flex-col items-center justify-center py-16 gap-3 ${sub}`}>
               <FileImage size={40} className="opacity-30" />
-              <p className="text-sm">No documents yet. Upload your first file above.</p>
+              <p className="text-sm">No documents yet.</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {uploads.map((file, i) => (
-                <div key={i} className={`group relative border rounded-2xl overflow-hidden transition-all cursor-pointer ${card}`}>
+                <div key={i} className={`group relative border rounded-2xl overflow-hidden transition-all ${
+                  dark ? 'bg-gray-800 border-gray-700 hover:border-blue-500' : 'bg-white border-slate-200 hover:border-blue-300'
+                }`}>
                   <a href={`/uploads/${file.name}`} target="_blank" rel="noreferrer" className="block no-underline">
-                    {/* Thumbnail */}
                     <div className={`aspect-[4/3] flex items-center justify-center ${dark ? 'bg-gray-700/50' : 'bg-slate-50'}`}>
                       {isImage(file.name) ? (
                         <img src={`/uploads/${file.name}`} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <div className="flex flex-col items-center gap-2">
-                          <div className={`w-12 h-14 rounded-lg flex items-center justify-center ${dark ? 'bg-gray-600' : 'bg-slate-200'}`}>
-                            <span className={`text-xs font-bold ${dark ? 'text-gray-300' : 'text-slate-600'}`}>
-                              {getFileExt(file.name)}
-                            </span>
-                          </div>
+                        <div className={`w-12 h-14 rounded-lg flex items-center justify-center ${dark ? 'bg-gray-600' : 'bg-slate-200'}`}>
+                          <span className={`text-xs font-bold ${dark ? 'text-gray-300' : 'text-slate-600'}`}>{getFileExt(file.name)}</span>
                         </div>
                       )}
                     </div>
-                    {/* Info */}
                     <div className="p-2.5">
-                      <p className={`text-xs font-medium truncate ${dark ? 'text-gray-200' : 'text-slate-700'}`}>
-                        {getDisplayName(file.name)}
-                      </p>
+                      <p className={`text-xs font-medium truncate ${dark ? 'text-gray-200' : 'text-slate-700'}`}>{getDisplayName(file.name)}</p>
                       <p className={`text-[10px] mt-0.5 ${sub}`}>
                         {new Date(file.timestamp).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
                       </p>
                     </div>
                   </a>
-                  {/* Delete button */}
                   <button
                     onClick={(e) => { e.preventDefault(); setConfirmFile(file.name); }}
-                    className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                    className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-sm ${
                       dark ? 'bg-gray-900/80 hover:bg-red-900/60 text-red-400' : 'bg-white/90 hover:bg-red-50 text-red-500'
-                    } shadow-sm`}
+                    }`}
                   >
                     <Trash2 size={12} />
                   </button>
@@ -246,11 +225,8 @@ const LibraryModal: React.FC<{
           )}
         </div>
       </div>
-
       {confirmFile && (
-        <ConfirmDialog
-          dark={dark}
-          title="Delete Document"
+        <ConfirmDialog dark={dark} title="Delete Document"
           message={`"${getDisplayName(confirmFile)}" will be permanently deleted.`}
           onConfirm={() => { onDelete(confirmFile); setConfirmFile(null); }}
           onCancel={() => setConfirmFile(null)}
@@ -310,11 +286,9 @@ const ChatRow: React.FC<{
         ) : (
           <button onClick={onSelect} className="flex items-center gap-2 px-3 py-2.5 flex-1 min-w-0 text-left">
             <MessageSquare size={13} className={`shrink-0 opacity-50 ${isActive ? (dark ? 'text-blue-300' : 'text-blue-600') : ''}`} />
-            <div className="flex-1 min-w-0">
-              <p className={`text-xs font-medium truncate ${isActive ? (dark ? 'text-blue-300' : 'text-blue-700') : (dark ? 'text-gray-300' : 'text-slate-700')}`}>
-                {session.title}
-              </p>
-            </div>
+            <p className={`text-xs font-medium truncate flex-1 ${isActive ? (dark ? 'text-blue-300' : 'text-blue-700') : (dark ? 'text-gray-300' : 'text-slate-700')}`}>
+              {session.title}
+            </p>
           </button>
         )}
         {!editing && (
@@ -367,121 +341,128 @@ const Sidebar: React.FC<SidebarProps> = ({
   const sub = dark ? 'text-gray-500' : 'text-slate-400';
   const divider = dark ? 'border-gray-700/60' : 'border-slate-100';
   const hoverBg = dark ? 'hover:bg-gray-800' : 'hover:bg-slate-50';
-  const iconBtn = `p-2.5 rounded-xl transition-all flex items-center justify-center ${hoverBg} ${sub}`;
+
+  // Icon rail button style
+  const railBtn = (active = false) =>
+    `w-10 h-10 rounded-xl transition-all flex items-center justify-center ${
+      active
+        ? (dark ? 'bg-gray-700 text-white' : 'bg-slate-100 text-slate-800')
+        : `${hoverBg} ${sub}`
+    }`;
 
   return (
     <>
-      {/* ── Icon rail (always visible) ── */}
-      <div className={`fixed top-14 left-0 z-30 w-14 flex flex-col items-center py-3 gap-1 border-r ${railBg}`}
-        style={{ height: 'calc(100vh - 3.5rem)' }}>
-
-        {/* Open sidebar toggle */}
-        <button
-          onClick={isOpen ? onClose : onOpen}
-          className={`${iconBtn} ${isOpen ? (dark ? 'bg-gray-800 text-white' : 'bg-slate-100 text-slate-800') : ''}`}
-          title={isOpen ? 'Close sidebar' : 'Open sidebar'}
+      {/* ── Icon rail — only shown when sidebar is CLOSED ── */}
+      {!isOpen && (
+        <div
+          className={`fixed top-14 left-0 z-30 w-14 flex flex-col items-center py-3 gap-1 border-r ${railBg}`}
+          style={{ height: 'calc(100vh - 3.5rem)' }}
         >
-          <PanelLeftOpen size={18} />
-        </button>
+          {/* 1. Toggle (open sidebar) */}
+          <button onClick={onOpen} className={railBtn()} title="Open sidebar">
+            <PanelLeftOpen size={18} />
+          </button>
 
-        <div className={`w-8 h-px my-1 ${dark ? 'bg-gray-700' : 'bg-slate-200'}`} />
+          {/* 2. QR */}
+          <button onClick={() => setShowQR(true)} className={railBtn()} title="Connect Device">
+            <QrCode size={18} />
+          </button>
 
-        {/* New chat */}
-        <button onClick={onNewChat} className={iconBtn} title="New Chat">
-          <Plus size={18} />
-        </button>
+          {/* 3. Library */}
+          <button onClick={() => setShowLibrary(true)} className={railBtn()} title="Document Library">
+            <Grid3X3 size={18} />
+          </button>
 
-        {/* Connect device */}
-        <button onClick={() => setShowQR(true)} className={iconBtn} title="Connect Device">
-          <QrCode size={18} />
-        </button>
-
-        {/* Library */}
-        <button onClick={() => setShowLibrary(true)} className={iconBtn} title="Document Library">
-          <Grid3X3 size={18} />
-        </button>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Chat count badge */}
-        {sessions.length > 0 && (
-          <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${dark ? 'bg-gray-700 text-gray-400' : 'bg-slate-100 text-slate-500'}`}>
-            {sessions.length}
-          </div>
-        )}
-      </div>
-
-      {/* ── Full sidebar panel ── */}
-      <aside
-        className={`fixed top-14 left-14 z-30 w-60 flex flex-col border-r shadow-xl transition-all duration-300 ease-in-out ${panelBg} ${
-          isOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'
-        }`}
-        style={{ height: 'calc(100vh - 3.5rem)' }}
-      >
-        <div className="flex-1 overflow-y-auto">
-
-          {/* Chats section */}
-          <div className="px-3 pt-4 pb-3">
-            <div className={`flex items-center justify-between mb-2 px-1`}>
-              <span className={`text-[10px] font-bold uppercase tracking-widest ${sub}`}>Chats</span>
-            </div>
-
-            <button
-              onClick={onNewChat}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors mb-2 ${
-                dark ? 'text-gray-300 hover:bg-gray-800 border border-gray-700' : 'text-slate-600 hover:bg-slate-50 border border-slate-200'
-              }`}
-            >
-              <Plus size={14} />
-              New Chat
-            </button>
-
-            <div className="space-y-0.5">
-              {sessions.length === 0 ? (
-                <p className={`text-xs text-center py-4 ${sub}`}>No chats yet</p>
-              ) : (
-                sessions.map((s) => (
-                  <ChatRow
-                    key={s.id} dark={dark} session={s}
-                    isActive={activeChatId === s.id}
-                    onSelect={() => onSelectChat(s.id)}
-                    onDelete={() => onDeleteChat(s.id)}
-                    onRename={(t) => onRenameChat(s.id, t)}
-                    sub={sub} hoverBg={hoverBg}
-                  />
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Divider */}
-          <div className={`mx-3 h-px ${dark ? 'bg-gray-700/60' : 'bg-slate-100'}`} />
-
-          {/* Quick actions */}
-          <div className="px-3 py-3 space-y-1">
-            <button
-              onClick={() => setShowQR(true)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-colors ${hoverBg} ${dark ? 'text-gray-400' : 'text-slate-500'}`}
-            >
-              <Smartphone size={14} />
-              Connect Device
-            </button>
-            <button
-              onClick={() => setShowLibrary(true)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-colors ${hoverBg} ${dark ? 'text-gray-400' : 'text-slate-500'}`}
-            >
-              <FolderOpen size={14} />
-              Document Library
-              {uploads.length > 0 && (
-                <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${dark ? 'bg-gray-700 text-gray-400' : 'bg-slate-100 text-slate-500'}`}>
-                  {uploads.length}
-                </span>
-              )}
-            </button>
-          </div>
+          {/* 4. New Chat */}
+          <button onClick={onNewChat} className={railBtn()} title="New Chat">
+            <Plus size={18} />
+          </button>
         </div>
-      </aside>
+      )}
+
+      {/* ── Full sidebar panel — only shown when sidebar is OPEN ── */}
+      {isOpen && (
+        <aside
+          className={`fixed top-14 left-0 z-30 w-64 flex flex-col border-r shadow-xl ${panelBg}`}
+          style={{ height: 'calc(100vh - 3.5rem)' }}
+        >
+          {/* Panel header: toggle close button on the LEFT */}
+          <div className={`flex items-center gap-2 px-3 py-3 border-b ${divider}`}>
+            <button
+              onClick={onClose}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${hoverBg} ${sub}`}
+              title="Close sidebar"
+            >
+              <PanelLeftClose size={16} />
+            </button>
+            <span className={`text-sm font-semibold ${dark ? 'text-white' : 'text-slate-800'}`}>Edusaku</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto flex flex-col">
+
+            {/* ── Section 1: Connect Device ── */}
+            <div className={`px-3 py-2 border-b ${divider}`}>
+              <button
+                onClick={() => setShowQR(true)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${hoverBg} ${dark ? 'text-gray-300' : 'text-slate-600'}`}
+              >
+                <Smartphone size={14} className="text-blue-500" />
+                Connect Device
+              </button>
+            </div>
+
+            {/* ── Section 2: Document Library ── */}
+            <div className={`px-3 py-2 border-b ${divider}`}>
+              <button
+                onClick={() => setShowLibrary(true)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${hoverBg} ${dark ? 'text-gray-300' : 'text-slate-600'}`}
+              >
+                <FolderOpen size={14} className="text-blue-500" />
+                Document Library
+                {uploads.length > 0 && (
+                  <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${dark ? 'bg-gray-700 text-gray-400' : 'bg-slate-100 text-slate-500'}`}>
+                    {uploads.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* ── Section 3: Chats ── */}
+            <div className="px-3 pt-3 pb-4 flex-1">
+              <div className="flex items-center justify-between mb-2 px-1">
+                <span className={`text-[10px] font-bold uppercase tracking-widest ${sub}`}>Chats</span>
+              </div>
+
+              <button
+                onClick={onNewChat}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors mb-2 ${
+                  dark ? 'text-gray-300 hover:bg-gray-800 border border-gray-700' : 'text-slate-600 hover:bg-slate-50 border border-slate-200'
+                }`}
+              >
+                <Plus size={14} />
+                New Chat
+              </button>
+
+              <div className="space-y-0.5">
+                {sessions.length === 0 ? (
+                  <p className={`text-xs text-center py-4 ${sub}`}>No chats yet</p>
+                ) : (
+                  sessions.map((s) => (
+                    <ChatRow
+                      key={s.id} dark={dark} session={s}
+                      isActive={activeChatId === s.id}
+                      onSelect={() => onSelectChat(s.id)}
+                      onDelete={() => onDeleteChat(s.id)}
+                      onRename={(t) => onRenameChat(s.id, t)}
+                      sub={sub} hoverBg={hoverBg}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </aside>
+      )}
 
       {/* ── Modals ── */}
       {showQR && (
