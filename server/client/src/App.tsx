@@ -210,7 +210,11 @@ const App: React.FC = () => {
     );
 
     try {
-      const res = await axios.post('/chat', { prompt: userText + fileContext });
+      const currentMessages = sessions.find((s) => s.id === activeChatId)?.messages ?? [];
+      const res = await axios.post('/chat', {
+        prompt: userText + fileContext,
+        history: currentMessages,
+      });
       const assistantMsg: Message = { role: 'assistant', content: res.data.response };
 
       setSessions((prev) =>

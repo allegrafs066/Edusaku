@@ -5,12 +5,64 @@ const os      = require('os');
 const path    = require('path');
 const fs      = require('fs');
 const axios   = require('axios');
+const { spawn } = require('child_process');
 
 const { indexFile, deleteFileFromIndex, buildRAGPrompt, getIndexStatus } = require('./rag');
 
 const app  = express();
 const PORT = 3000;
-const OLLAMA_URL = 'http://localhost:11434/api/generate';
+const OLLAMA_URL   = 'http://localhost:11434/api/chat';
+const OLLAMA_MODEL = 'gemma4:e2b';
+
+// ── Auto-start Ollama if it isn't already running ─────────────────────────────
+
+let _ollamaReady = false;
+
+async function ensureOllama() {
+    try {
+        await axios.get('http://localhost:11434/', { timeout: 2000 });
+        _ollamaReady = true;
+        console.log('[LLM] Ollama already running.');
+        return;
+    } catch (_) { /* not running yet */ }
+
+    console.log('[LLM] Starting Ollama in background…');
+    const proc = spawn('ollama', ['serve'], {
+        detached: true,
+        stdio:    'ignore',
+        windowsHide: true,
+    });
+    proc.unref();
+
+    for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 500));
+        try {
+            await axios.get('http://localhost:11434/', { timeout: 1000 });
+            _ollamaReady = true;
+            console.log('[LLM] Ollama ready.');
+            return;
+        } catch (_) { /* still starting */ }
+    }
+    console.warn('[LLM] Ollama did not start in time — chat may fail on first request.');
+}
+
+/**
+ * Call Ollama's /api/chat endpoint.
+ * @param {Array<{role:string, content:string}>} messages  Full message array.
+ */
+async function generateAnswer(messages) {
+    if (!_ollamaReady) await ensureOllama();
+    const response = await axios.post(OLLAMA_URL, {
+        model:    OLLAMA_MODEL,
+        messages,
+        stream:   false,
+        options: {
+            num_predict: 512,
+            temperature: 0.7,
+        },
+    }, { timeout: 180000 });
+    return response.data.message?.content ?? '';
+}
 
 // ── IP helper ─────────────────────────────────────────────────────────────────
 
@@ -111,24 +163,43 @@ app.delete('/files/:filename', async (req, res) => {
 
 // RAG-augmented chat
 app.post('/chat', async (req, res) => {
-    const { prompt } = req.body;
+    const { prompt, history = [] } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     try {
-        // Build prompt with retrieved document context
-        const augmentedPrompt = await buildRAGPrompt(prompt);
+        // Retrieve relevant document chunks for this query
+        const ragContext = await buildRAGPrompt(prompt);
+        const hasContext = ragContext !== prompt;
 
-        const response = await axios.post(OLLAMA_URL, {
-            model:  'gemma4:e2b',
-            prompt: augmentedPrompt,
-            stream: false,
+        // Build Ollama messages array
+        const messages = [];
+
+        // System message
+        messages.push({
+            role: 'system',
+            content: hasContext
+                ? 'You are Edusaku, a helpful educational AI assistant. Use the following document context to answer accurately:\n\n' + ragContext
+                : 'You are Edusaku, a helpful educational AI assistant.',
         });
 
-        res.json({ response: response.data.response });
+        // Prior conversation turns (last 10 to stay within context)
+        for (const msg of history.slice(-10)) {
+            messages.push({
+                role:    msg.role === 'user' ? 'user' : 'assistant',
+                content: msg.content,
+            });
+        }
+
+        // Current user message
+        messages.push({ role: 'user', content: prompt });
+
+        const answer = await generateAnswer(messages);
+        res.json({ response: answer });
     } catch (error) {
         console.error('[Chat] Error:', error.message);
         res.status(500).json({
-            error: 'AI model is not responding. Make sure Ollama is running.',
+            error: 'AI model failed to generate a response.',
+            detail: error.message,
         });
     }
 });
@@ -166,25 +237,29 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('-----------------------------------------');
     console.log('RAG pipeline: active (Tesseract OCR + MiniLM embeddings + Vectra)');
 
-    // Re-index any existing uploaded files that aren't indexed yet
     setTimeout(async () => {
         try {
-            const { files: indexed } = await getIndexStatus();
-            const uploaded = fs.readdirSync(uploadDir);
-            const toIndex = uploaded.filter(f => !indexed[f]);
-            if (toIndex.length > 0) {
-                console.log(`[RAG] Found ${toIndex.length} unindexed file(s), indexing now…`);
-                for (const filename of toIndex) {
-                    const filePath = path.join(uploadDir, filename);
-                    await indexFile(filePath, filename).catch(e =>
-                        console.error(`[RAG] Failed to index ${filename}:`, e.message)
-                    );
-                }
-            } else {
-                console.log('[RAG] All files already indexed.');
-            }
+            await Promise.all([
+                ensureOllama(),
+                (async () => {
+                    const { files: indexed } = await getIndexStatus();
+                    const uploaded = fs.readdirSync(uploadDir);
+                    const toIndex = uploaded.filter(f => !indexed[f]);
+                    if (toIndex.length > 0) {
+                        console.log(`[RAG] Found ${toIndex.length} unindexed file(s), indexing now…`);
+                        for (const filename of toIndex) {
+                            const filePath = path.join(uploadDir, filename);
+                            await indexFile(filePath, filename).catch(e =>
+                                console.error(`[RAG] Failed to index ${filename}:`, e.message)
+                            );
+                        }
+                    } else {
+                        console.log('[RAG] All files already indexed.');
+                    }
+                })(),
+            ]);
         } catch (err) {
-            console.error('[RAG] Startup indexing error:', err.message);
+            console.error('[Startup] Error:', err.message);
         }
-    }, 1000); // slight delay to let server fully start
+    }, 1000);
 });
