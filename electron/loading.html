@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Starting Edusaku…</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+
+    .logo {
+      font-size: 2.2rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+
+    .tagline {
+      font-size: 0.85rem;
+      color: #64748b;
+      margin-bottom: 40px;
+      letter-spacing: 0.3px;
+    }
+
+    .spinner-wrap {
+      position: relative;
+      width: 48px;
+      height: 48px;
+      margin-bottom: 24px;
+    }
+
+    #spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid #1e293b;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #status {
+      font-size: 0.8rem;
+      color: #475569;
+      text-align: center;
+      max-width: 320px;
+      line-height: 1.5;
+    }
+
+    .dots {
+      display: inline-block;
+      animation: dots 1.4s steps(3, end) infinite;
+      width: 20px;
+      text-align: left;
+    }
+
+    @keyframes dots {
+      0%   { content: '.';   }
+      33%  { content: '..';  }
+      66%  { content: '...'; }
+      100% { content: '';    }
+    }
+
+    .dots::after {
+      content: '';
+      animation: dotframes 1.4s steps(4, end) infinite;
+    }
+
+    @keyframes dotframes {
+      0%   { content: ''; }
+      25%  { content: '.'; }
+      50%  { content: '..'; }
+      75%  { content: '...'; }
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">Edusaku</div>
+  <div class="tagline">Offline AI for Education</div>
+
+  <div class="spinner-wrap">
+    <div id="spinner"></div>
+  </div>
+
+  <div id="status">
+    Starting server and Ollama<span class="dots"></span>
+  </div>
+
+  <script>
+    // Cycle through status messages to show progress
+    const messages = [
+      'Starting server and Ollama',
+      'Loading AI pipeline',
+      'Initialising vector index',
+      'Almost ready',
+    ];
+    let idx = 0;
+    const statusEl = document.getElementById('status');
+
+    setInterval(() => {
+      idx = (idx + 1) % messages.length;
+      statusEl.innerHTML = messages[idx] + '<span class="dots"></span>';
+    }, 3500);
+  </script>
+</body>
+</html>

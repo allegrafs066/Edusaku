@@ -1,17 +1,17 @@
 const express = require('express');
-const multer  = require('multer');
-const cors    = require('cors');
-const os      = require('os');
-const path    = require('path');
-const fs      = require('fs');
-const axios   = require('axios');
+const multer = require('multer');
+const cors = require('cors');
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
+const axios = require('axios');
 const { spawn } = require('child_process');
 
 const { indexFile, deleteFileFromIndex, buildRAGPrompt, getIndexStatus, cleanOrphanChunks, clearIndex } = require('./rag');
 
-const app  = express();
+const app = express();
 const PORT = 3000;
-const OLLAMA_URL   = 'http://localhost:11434/api/chat';
+const OLLAMA_URL = 'http://localhost:11434/api/chat';
 const OLLAMA_MODEL = 'gemma4:e2b';
 
 // ── Auto-start Ollama if it isn't already running ─────────────────────────────
@@ -29,7 +29,7 @@ async function ensureOllama() {
     console.log('[LLM] Starting Ollama in background…');
     const proc = spawn('ollama', ['serve'], {
         detached: true,
-        stdio:    'ignore',
+        stdio: 'ignore',
         windowsHide: true,
     });
     proc.unref();
@@ -53,10 +53,10 @@ async function ensureOllama() {
 async function generateAnswer(messages) {
     if (!_ollamaReady) await ensureOllama();
     const response = await axios.post(OLLAMA_URL, {
-        model:    OLLAMA_MODEL,
+        model: OLLAMA_MODEL,
         messages,
-        stream:   false,
-        options: { num_predict: 512, temperature: 0.7 },
+        stream: false,
+        options: { num_predict: 2048, temperature: 0.7 },
     }, { timeout: 180000 });
     return response.data.message?.content ?? '';
 }
@@ -107,7 +107,7 @@ function getLocalIpAddress() {
     return '0.0.0.0';
 }
 
-const LOCAL_IP  = getLocalIpAddress();
+const LOCAL_IP = getLocalIpAddress();
 const SERVER_URL = `http://${LOCAL_IP}:${PORT}`;
 
 // ── Upload dir ────────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
-    filename:    (req, file, cb) => {
+    filename: (req, file, cb) => {
         const suffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
         cb(null, suffix + '-' + file.originalname);
     },
@@ -160,9 +160,9 @@ app.post('/upload', upload.single('image'), async (req, res) => {
 
     console.log(`[Upload] Received: ${req.file.filename}`);
     res.json({
-        message:  'File uploaded successfully',
+        message: 'File uploaded successfully',
         filename: req.file.filename,
-        path:     req.file.path,
+        path: req.file.path,
         indexing: true, // client can show "processing" state
     });
 
@@ -226,8 +226,8 @@ app.post('/chat', async (req, res) => {
         const ragContext = await buildRAGPrompt(prompt);
         const hasContext = ragContext !== prompt;
 
-        const cleanImages = Array.isArray(images) 
-            ? images.map(img => img.includes(',') ? img.split(',')[1] : img) 
+        const cleanImages = Array.isArray(images)
+            ? images.map(img => img.includes(',') ? img.split(',')[1] : img)
             : [];
 
         const mappedHistory = history.slice(-10).map(m => {
@@ -265,8 +265,8 @@ app.post('/chat/stream', async (req, res) => {
         const ragContext = await buildRAGPrompt(prompt);
         const hasContext = ragContext !== prompt;
 
-        const cleanImages = Array.isArray(images) 
-            ? images.map(img => img.includes(',') ? img.split(',')[1] : img) 
+        const cleanImages = Array.isArray(images)
+            ? images.map(img => img.includes(',') ? img.split(',')[1] : img)
             : [];
 
         const mappedHistory = history.slice(-10).map(m => {
@@ -287,7 +287,7 @@ app.post('/chat/stream', async (req, res) => {
             model: OLLAMA_MODEL,
             messages,
             stream: true,
-            options: { num_predict: 1024, temperature: 0.7 },
+            options: { num_predict: 2048, temperature: 0.7 },
         }, { responseType: 'stream', timeout: 180000 });
 
         let buf = '';
@@ -302,15 +302,15 @@ app.post('/chat/stream', async (req, res) => {
                     const token = parsed.message?.content || '';
                     if (token) res.write(`data: ${JSON.stringify({ token })}\n\n`);
                     if (parsed.done) res.write('data: [DONE]\n\n');
-                } catch {}
+                } catch { }
             }
         });
-        
-        ollamaRes.data.on('end', () => { 
-            res.write('data: [DONE]\n\n'); 
-            res.end(); 
+
+        ollamaRes.data.on('end', () => {
+            res.write('data: [DONE]\n\n');
+            res.end();
         });
-        
+
         ollamaRes.data.on('error', (err) => {
             console.error('[Stream] Ollama error:', err.message);
             res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
@@ -340,13 +340,13 @@ app.get('/usage', async (req, res) => {
     };
     try {
         const uploadsSize = getFolderSize(uploadDir);
-        const vectorSize  = getFolderSize(path.join(__dirname, 'vector_index'));
-        const status      = await getIndexStatus();
-        const fileCount   = fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir).length : 0;
+        const vectorSize = getFolderSize(path.join(__dirname, 'vector_index'));
+        const status = await getIndexStatus();
+        const fileCount = fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir).length : 0;
         res.json({
             documents: { sizeBytes: uploadsSize, count: fileCount },
-            vectors:   { sizeBytes: vectorSize, chunkCount: status.totalChunks },
-            total:     { sizeBytes: uploadsSize + vectorSize },
+            vectors: { sizeBytes: vectorSize, chunkCount: status.totalChunks },
+            total: { sizeBytes: uploadsSize + vectorSize },
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -378,18 +378,18 @@ app.post('/feedback', express.json({ limit: '50mb' }), (req, res) => {
     try {
         const { feedback } = req.body;
         if (!feedback) return res.status(400).json({ error: 'Feedback data required' });
-        
+
         const feedbackFile = path.join(__dirname, 'feedback.json');
         let data = [];
         if (fs.existsSync(feedbackFile)) {
             data = JSON.parse(fs.readFileSync(feedbackFile, 'utf8'));
         }
-        
+
         data.push({
             ...feedback,
             timestamp: new Date().toISOString(),
         });
-        
+
         fs.writeFileSync(feedbackFile, JSON.stringify(data, null, 2), 'utf8');
         res.json({ success: true });
     } catch (err) {
