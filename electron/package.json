@@ -2,6 +2,11 @@
   "name": "edusaku-desktop",
   "version": "1.0.0",
   "description": "Edusaku — Offline AI for Education (Desktop)",
+  "author": "Bossa Nova Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/allegrafs066/Edusaku"
+  },
   "main": "main.js",
   "scripts": {
     "start": "electron .",
