@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { QRPopup } from './Sidebar';
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -307,7 +308,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             <img src="/logo.png" alt="Edusaku" className="w-24 h-24 object-contain" />
             <h2 className={`text-2xl font-bold mt-1 mb-1 ${textPrimary}`}>Edusaku</h2>
             <p className={`text-sm leading-relaxed max-w-sm mb-6 ${textSecondary}`}>
-              Ask anything. Upload a document first to discuss its contents. Everything runs locally on this PC.
+              Ask anything. Upload a document to start exploring its contents. Everything runs locally on your device.
             </p>
             <InputBar
               dark={dark}
@@ -451,6 +452,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           input={input}
           isChatting={isChatting}
           pendingFile={pendingFile}
+          qrCodeDataUrl={qrCodeDataUrl}
+          serverInfo={serverInfo}
           onInputChange={onInputChange}
           onSend={handleSend}
           onFileSelected={setPendingFile}
@@ -458,6 +461,16 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           onShowQR={() => setShowQR(true)}
         />
       </div>
+
+      {/* QR Code Modal for when user clicks "Upload from Device" from the input menu */}
+      {showQR && qrCodeDataUrl && (
+        <QRPopup
+          dark={dark}
+          qrCodeDataUrl={qrCodeDataUrl}
+          serverInfo={serverInfo || null}
+          onClose={() => setShowQR(false)}
+        />
+      )}
     </div>
   );
 };

@@ -270,5 +270,20 @@ async function cleanOrphanChunks(existingFilenames) {
     }
 }
 
-module.exports = { indexFile, deleteFileFromIndex, retrieve, buildRAGPrompt, getIndexStatus, cleanOrphanChunks };
+/**
+ * Wipe the entire vector index.
+ */
+async function clearIndex() {
+    try {
+        if (fs.existsSync(indexPath)) {
+            fs.rmSync(indexPath, { recursive: true, force: true });
+        }
+        _index = null;
+        console.log(`[RAG] Vector index cleared successfully.`);
+    } catch (err) {
+        console.error('[RAG] clearIndex error:', err.message);
+    }
+}
+
+module.exports = { indexFile, deleteFileFromIndex, retrieve, buildRAGPrompt, getIndexStatus, cleanOrphanChunks, clearIndex };
 
