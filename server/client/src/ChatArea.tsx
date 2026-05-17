@@ -208,7 +208,7 @@ const FeedbackModal: React.FC<{
         <h3 className={`font-bold text-lg mb-4 ${dark ? 'text-white' : 'text-slate-800'}`}>Submit Feedback</h3>
         <div className="space-y-3 mb-5">
           {categories.map(c => (
-            <label key={c} className="flex items-center gap-3 cursor-pointer group">
+            <label key={c} onClick={() => setCategory(c)} className="flex items-center gap-3 cursor-pointer group">
               <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${
                 category === c 
                   ? 'border-blue-500 bg-blue-500' 
@@ -366,7 +366,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showQR, setShowQR] = useState(false);
-  const [showToast, setShowToast] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [dislikeIdx, setDislikeIdx] = useState<number | null>(null);
 
   const handleSend = useCallback(() => {
@@ -529,8 +529,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         <button
                           onClick={() => {
                             onLikeMessage?.(msg);
-                            setShowToast(true);
-                            setTimeout(() => setShowToast(false), 3000);
+                            setToastMsg('Saved to Bookmarks');
+                            setTimeout(() => setToastMsg(null), 3000);
                           }}
                           title="Like"
                           className={`p-1.5 rounded-lg transition-colors ${
@@ -639,16 +639,18 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           onSubmit={(feedback) => {
             onDislikeMessage?.(messages[dislikeIdx], feedback);
             setDislikeIdx(null);
+            setToastMsg('Feedback submitted successfully.');
+            setTimeout(() => setToastMsg(null), 3000);
           }}
         />
       )}
 
       {/* Toast Notification */}
       <div className={`fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl shadow-xl transition-all duration-300 ${
-        showToast ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+        toastMsg ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
       } ${dark ? 'bg-gray-800 text-white border border-gray-700' : 'bg-white text-slate-800 border border-slate-200'}`}>
         <div className="flex items-center gap-2 text-sm font-medium">
-          Saved to Bookmarks <Check size={14} className="text-green-500" />
+          {toastMsg} <Check size={14} className="text-green-500" />
         </div>
       </div>
     </div>
