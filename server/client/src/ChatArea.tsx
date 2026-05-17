@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Send, Plus, Copy, RotateCcw, Check, Maximize2, FileText, Image, Smartphone, X, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -19,8 +21,7 @@ interface ChatAreaProps {
   qrCodeDataUrl?: string;
   serverInfo?: { ip: string; port: number } | null;
   onInputChange: (v: string) => void;
-  onSend: () => void;
-  onUploadFile?: (file: File) => void;
+  onSend: (file: File | null) => void;
   sessionTitle?: string;
   onRetry?: () => void;
 }
@@ -33,7 +34,7 @@ const CodeBlock: React.FC<{ dark: boolean; className?: string; children?: React.
   const handle = () => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); };
   return (
     <div className={`my-3 rounded-xl overflow-hidden border ${dark ? 'border-gray-700' : 'border-slate-200'}`}>
-      <div className={`flex items-center justify-between px-3 py-1.5 ${dark ? 'bg-gray-800 text-gray-400' : 'bg-slate-100 text-slate-500'}`}>
+      <div className={`flex items-center justify-between px-3 py-1.5 ${dark ? 'bg-[#1E1E1E] text-gray-400' : 'bg-slate-100 text-slate-500'}`}>
         <span className="text-[10px] font-mono font-medium uppercase tracking-wider">{lang}</span>
         <button onClick={handle} className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded transition-colors ${
           dark ? 'hover:bg-gray-700 hover:text-gray-200' : 'hover:bg-slate-200 hover:text-slate-700'
@@ -41,7 +42,14 @@ const CodeBlock: React.FC<{ dark: boolean; className?: string; children?: React.
           {copied ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
         </button>
       </div>
-      <pre className={`px-4 py-3 overflow-x-auto text-xs font-mono leading-relaxed ${dark ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-800'}`}><code>{code}</code></pre>
+      <SyntaxHighlighter
+        language={lang}
+        style={dark ? vscDarkPlus : vs}
+        customStyle={{ margin: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, fontSize: '0.75rem', padding: '1rem' }}
+        PreTag="div"
+      >
+        {code}
+      </SyntaxHighlighter>
     </div>
   );
 };
@@ -132,21 +140,31 @@ const UploadMenu: React.FC<{
   const bg = dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200';
   return (
     <div ref={ref} className={`absolute bottom-full left-0 mb-2 z-50 w-72 rounded-2xl shadow-2xl border overflow-hidden ${bg}`}>
-      <button onClick={onUploadFile} className={`w-full flex flex-col text-left px-4 py-3.5 transition-colors border-b ${
+      <button onClick={onUploadFile} className={`w-full flex items-start gap-3 text-left px-4 py-3.5 transition-colors border-b ${
         dark ? 'hover:bg-gray-700/50 border-gray-700' : 'hover:bg-slate-50 border-slate-100'
       }`}>
-        <span className={`text-sm font-bold ${dark ? 'text-gray-100' : 'text-slate-800'}`}>📄 Upload File</span>
-        <span className={`text-[11px] mt-0.5 ${dark ? 'text-gray-400' : 'text-slate-500'}`}>
-          Documents: PDF, DOCX, TXT · Images: JPG, PNG, WEBP
-        </span>
+        <div className={`p-2 rounded-xl mt-0.5 ${dark ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
+          <FileText size={18} />
+        </div>
+        <div className="flex flex-col">
+          <span className={`text-sm font-bold ${dark ? 'text-gray-100' : 'text-slate-800'}`}>Upload File</span>
+          <span className={`text-[11px] mt-0.5 leading-tight ${dark ? 'text-gray-400' : 'text-slate-500'}`}>
+            Documents: PDF, DOCX, TXT<br />Images: JPG, PNG, WEBP
+          </span>
+        </div>
       </button>
-      <button onClick={onUploadDevice} className={`w-full flex flex-col text-left px-4 py-3.5 transition-colors ${
+      <button onClick={onUploadDevice} className={`w-full flex items-start gap-3 text-left px-4 py-3.5 transition-colors ${
         dark ? 'hover:bg-gray-700/50' : 'hover:bg-slate-50'
       }`}>
-        <span className={`text-sm font-bold ${dark ? 'text-gray-100' : 'text-slate-800'}`}>📱 Upload from Device</span>
-        <span className={`text-[11px] mt-0.5 ${dark ? 'text-gray-400' : 'text-slate-500'}`}>
-          Scan QR code from the mobile app to send files wirelessly
-        </span>
+        <div className={`p-2 rounded-xl mt-0.5 ${dark ? 'bg-purple-900/30 text-purple-400' : 'bg-purple-50 text-purple-600'}`}>
+          <Smartphone size={18} />
+        </div>
+        <div className="flex flex-col">
+          <span className={`text-sm font-bold ${dark ? 'text-gray-100' : 'text-slate-800'}`}>Upload from Device</span>
+          <span className={`text-[11px] mt-0.5 leading-tight ${dark ? 'text-gray-400' : 'text-slate-500'}`}>
+            Scan QR code from the mobile app to send files wirelessly
+          </span>
+        </div>
       </button>
     </div>
   );
@@ -259,23 +277,16 @@ const InputBar: React.FC<{
 // ── Main component ────────────────────────────────────────────────────────────
 const ChatArea: React.FC<ChatAreaProps> = ({
   dark, messages, streamingContent, input, isChatting, isProcessingFile,
-  qrCodeDataUrl, serverInfo, onInputChange, onSend, onUploadFile, sessionTitle, onRetry,
+  qrCodeDataUrl, serverInfo, onInputChange, onSend, sessionTitle, onRetry,
 }) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showQR, setShowQR] = useState(false);
 
-  // Wrap onSend to also handle file upload before sending
   const handleSend = useCallback(() => {
-    if (pendingFile && onUploadFile) {
-      onUploadFile(pendingFile);
-      setPendingFile(null);
-    }
-    // onSend from App.tsx runs after upload propagates via state
-    onSend();
-  }, [pendingFile, onUploadFile, onSend]);
-
-  const bgInner = dark ? 'bg-gray-950' : 'bg-white'; // for QR modal backdrop match
+    onSend(pendingFile);
+    setPendingFile(null);
+  }, [pendingFile, onSend]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });

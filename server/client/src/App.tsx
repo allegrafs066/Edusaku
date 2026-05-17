@@ -242,36 +242,50 @@ const App: React.FC = () => {
     setInput(lastUserMsg.content);
   }, [messages, isChatting, activeChatId]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isChatting || !activeChatId) return;
-    const userText = input.trim();
+  const handleSend = async (attachedFile: File | null) => {
+    if ((!input.trim() && !attachedFile) || isChatting || !activeChatId) return;
+    
+    const fileAttachmentName = attachedFile ? attachedFile.name : '';
+    const userText = input.trim() || `I've uploaded a document for you to analyze.`;
+    
     setInput('');
+    const userMsg: Message = { 
+      role: 'user', 
+      content: userText,
+      ...(fileAttachmentName ? { fileAttachment: { name: fileAttachmentName, type: 'document' } } : {})
+    };
+    const now = new Date().toISOString();
+
+    setSessions(prev => prev.map(s =>
+      s.id === activeChatId
+        ? { ...s, messages: [...s.messages, userMsg], lastActivityAt: now }
+        : s
+    ));
+
+    if (attachedFile) {
+      await uploadFile(attachedFile);
+    }
+
     setIsChatting(true);
     setStreamingContent('');
 
     const session = sessions.find(s => s.id === activeChatId);
     const chatId = activeChatId; // capture for async closures
     const isFirstMessage = (session?.messages.length ?? 0) === 0;
-    const fileContext = session?.attachedFiles.length
-      ? `\n\n[Context: The user has uploaded the following documents: ${session!.attachedFiles.join(', ')}. Refer to them when relevant.]`
-      : '';
+    
+    // Explicitly add the new file if it's not yet in the state (since React state updates are async)
+    const availableDocs = Array.from(new Set([...uploads.map(u => u.name), fileAttachmentName])).filter(Boolean);
+    const fileContext = availableDocs.length > 0
+      ? `\n\n[Context: The user has the following documents available in their library: ${availableDocs.join(', ')}. You can access their contents if the user asks about them. If the user asks about a document not in this list, inform them it has been removed or is unavailable.]`
+      : `\n\n[Context: The user currently has NO documents uploaded in their library. Do not hallucinate any document access.]`;
 
-    const userMsg: Message = { role: 'user', content: userText };
-    const now = new Date().toISOString();
-
-    setSessions(prev => prev.map(s =>
-      s.id === chatId
-        ? { ...s, messages: [...s.messages, userMsg], lastActivityAt: now }
-        : s
-    ));
-
-    const historyMessages = session?.messages ?? [];
+    const chatHistory = [...(session?.messages || []), userMsg];
 
     try {
       const response = await fetch('/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userText + fileContext, history: historyMessages }),
+        body: JSON.stringify({ prompt: userText + fileContext, history: chatHistory }),
       });
 
       if (!response.ok || !response.body) throw new Error('Stream request failed');
@@ -407,7 +421,6 @@ const App: React.FC = () => {
             isChatting={isChatting}
             onInputChange={setInput}
             onSend={handleSend}
-            onUploadFile={uploadFile}
             sessionTitle={activeSession?.title}
             onRetry={handleRetry}
           />
