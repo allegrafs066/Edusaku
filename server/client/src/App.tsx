@@ -292,6 +292,7 @@ const App: React.FC = () => {
     setTimeout(() => {
       _sendMessage(textContent, null);
     }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, isChatting, activeChatId]);
 
 
