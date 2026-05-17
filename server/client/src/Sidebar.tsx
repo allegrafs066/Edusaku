@@ -275,10 +275,10 @@ const LibraryModal: React.FC<{
 const UsagePopup: React.FC<{ 
   dark: boolean; 
   onClose: () => void;
-  sessionsCount: number;
+  sessions: ChatSession[];
   onClearAllChats: () => void;
   onClearAllUploads: () => void;
-}> = ({ dark, onClose, sessionsCount, onClearAllChats, onClearAllUploads }) => {
+}> = ({ dark, onClose, sessions, onClearAllChats, onClearAllUploads }) => {
   const [usage, setUsage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [chatSize, setChatSize] = useState(0);
@@ -288,11 +288,8 @@ const UsagePopup: React.FC<{
   const fetchUsage = () => {
     setLoading(true);
     
-    // Calculate chat size from localStorage
     try {
-      const rawChats = localStorage.getItem('edusaku_sessions') || '';
-      // Approximate size in bytes (UTF-16 characters = 2 bytes)
-      setChatSize(rawChats.length * 2);
+      setChatSize(new Blob([JSON.stringify(sessions)]).size);
     } catch (e) {
       setChatSize(0);
     }
@@ -350,7 +347,7 @@ const UsagePopup: React.FC<{
                 </div>
                 <div className="text-right">
                   <p className={`text-sm font-bold ${dark ? 'text-white' : 'text-slate-800'}`}>{fmt(chatSize)}</p>
-                  <p className={`text-[10px] ${sub}`}>{sessionsCount} sessions</p>
+                  <p className={`text-[10px] ${sub}`}>{sessions.length} sessions</p>
                 </div>
               </div>
 
@@ -503,6 +500,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <button onClick={onOpen} className={railBtn()} title="Open sidebar"><PanelLeftOpen size={18} /></button>
           <button onClick={() => setShowQR(true)} className={railBtn()} title="Connect Device"><QrCode size={18} /></button>
           <button onClick={() => setShowLibrary(true)} className={railBtn()} title="Document Library"><Grid3X3 size={18} /></button>
+          <button onClick={() => setShowUsage(true)} className={railBtn()} title="Usage"><BarChart2 size={18} /></button>
           <button onClick={onNewChat} className={railBtn()} title="New Chat"><Plus size={18} /></button>
         </div>
       )}
@@ -573,7 +571,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {showQR && <QRPopup dark={dark} qrCodeDataUrl={qrCodeDataUrl} serverInfo={serverInfo} onClose={() => setShowQR(false)} />}
       {showLibrary && <LibraryModal dark={dark} uploads={uploads} isUploading={isUploading} uploadProgress={uploadProgress} onUploadClick={onUploadClick} onDrop={onDrop} onDelete={onDeleteUpload} onClose={() => setShowLibrary(false)} />}
       {showSearch && <SearchPopup dark={dark} uploads={uploads} sessions={sessions} onSelectChat={(id) => { onSelectChat(id); setShowSearch(false); }} onClose={() => setShowSearch(false)} />}
-      {showUsage && <UsagePopup dark={dark} sessionsCount={sessions.length} onClearAllChats={onClearAllChats} onClearAllUploads={onClearAllUploads} onClose={() => setShowUsage(false)} />}
+      {showUsage && <UsagePopup dark={dark} sessions={sessions} onClearAllChats={onClearAllChats} onClearAllUploads={onClearAllUploads} onClose={() => setShowUsage(false)} />}
     </>
   );
 };
