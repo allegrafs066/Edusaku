@@ -104,6 +104,7 @@ const App: React.FC = () => {
   // ── Uploads ────────────────────────────────────────────────────────────────
   const [uploads, setUploads] = useState<UploadFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -117,6 +118,7 @@ const App: React.FC = () => {
   const uploadFile = async (file: File) => {
     if (isUploading) return;
     setIsUploading(true);
+    setIsProcessingFile(true);
     setUploadProgress(0);
     const fd = new FormData();
     fd.append('image', file);
@@ -132,21 +134,11 @@ const App: React.FC = () => {
         xhr.send(fd);
       });
       await fetchUploads();
-      if (activeChatId) {
-        setSessions(prev => prev.map(s => {
-          if (s.id !== activeChatId) return s;
-          const updatedFiles = Array.from(new Set([...s.attachedFiles, file.name]));
-          const fileMsg: Message = {
-            role: 'user',
-            content: `I've uploaded a document for you to analyze.`,
-          };
-          return { ...s, attachedFiles: updatedFiles, messages: [...s.messages, fileMsg] };
-        }));
-      }
     } catch (err) {
       console.error('Upload failed', err);
     } finally {
       setIsUploading(false);
+      setIsProcessingFile(false);
       setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -408,11 +400,14 @@ const App: React.FC = () => {
             dark={dark}
             messages={messages}
             streamingContent={streamingContent}
+            isProcessingFile={isProcessingFile}
+            qrCodeDataUrl={qrCodeDataUrl}
+            serverInfo={serverInfo}
             input={input}
             isChatting={isChatting}
             onInputChange={setInput}
             onSend={handleSend}
-            onUploadClick={() => fileInputRef.current?.click()}
+            onUploadFile={uploadFile}
             sessionTitle={activeSession?.title}
             onRetry={handleRetry}
           />
