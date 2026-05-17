@@ -36,6 +36,11 @@
           "!**/node_modules/.cache/**",
           "!**/.git/**"
         ]
+      },
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": ["**/*"]
       }
     ],
     "icon": "../server/client/public/icon.png",

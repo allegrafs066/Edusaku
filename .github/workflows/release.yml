@@ -18,12 +18,18 @@ jobs:
           - os: ubuntu-latest
             platform: linux
             artifact_glob: 'electron/dist/*.AppImage'
+            ollama_url: 'https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64'
+            ollama_bin: 'electron/bin/ollama-linux'
           - os: windows-latest
             platform: win
             artifact_glob: 'electron/dist/*.exe'
+            ollama_url: 'https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.exe'
+            ollama_bin: 'electron/bin/ollama-win.exe'
           - os: macos-latest
             platform: mac
             artifact_glob: 'electron/dist/*.dmg'
+            ollama_url: 'https://github.com/ollama/ollama/releases/latest/download/ollama-darwin'
+            ollama_bin: 'electron/bin/ollama-mac'
 
     runs-on: ${{ matrix.os }}
 
@@ -54,6 +60,20 @@ jobs:
       - name: Install server dependencies
         working-directory: server
         run: npm ci --omit=dev
+
+      # ── Download bundled Ollama binary ────────────────────────────────────────
+      - name: Create electron/bin directory
+        run: mkdir -p electron/bin
+        shell: bash
+
+      - name: Download Ollama binary (${{ matrix.platform }})
+        run: curl -L "${{ matrix.ollama_url }}" -o "${{ matrix.ollama_bin }}"
+        shell: bash
+
+      - name: Make Ollama binary executable (Linux/Mac)
+        if: matrix.platform != 'win'
+        run: chmod +x ${{ matrix.ollama_bin }}
+        shell: bash
 
       # ── Build Electron app ─────────────────────────────────────────────────
       - name: Install Electron dependencies

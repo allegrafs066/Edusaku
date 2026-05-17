@@ -83,3 +83,7 @@ server/models/*.gguf
 # ─── Server runtime data (uploads, vector index) ─────────────────────────────
 server/uploads/
 server/vector_index/
+# ─── Bundled Ollama binaries (large; downloaded by CI / local dev setup) ──────
+electron/bin/ollama-linux
+electron/bin/ollama-win.exe
+electron/bin/ollama-mac

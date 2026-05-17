@@ -11,6 +11,42 @@ let loadingWindow = null;
 
 // ── Path helpers ──────────────────────────────────────────────────────────────
 
+// Copies the platform-specific Ollama binary from app resources into a
+// writable userData directory named `ollama` (or `ollama.exe`), re-copying
+// whenever the app version changes. Returns the directory path so callers
+// can prepend it to PATH, making `spawn('ollama', ...)` resolve the bundle.
+function prepareBundledOllama() {
+  const binDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'bin')
+    : path.join(__dirname, 'bin');
+
+  const srcNames = { linux: 'ollama-linux', win32: 'ollama-win.exe', darwin: 'ollama-mac' };
+  const srcName = srcNames[process.platform];
+  if (!srcName) return null;
+
+  const src = path.join(binDir, srcName);
+  if (!fs.existsSync(src)) return null;
+
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  const wrapperDir = path.join(app.getPath('userData'), 'edusaku-bin');
+  if (!fs.existsSync(wrapperDir)) fs.mkdirSync(wrapperDir, { recursive: true });
+
+  const dest = path.join(wrapperDir, `ollama${ext}`);
+  const versionFile = path.join(wrapperDir, '.app-version');
+  const currentVersion = app.getVersion();
+
+  let cachedVersion = null;
+  try { cachedVersion = fs.readFileSync(versionFile, 'utf8').trim(); } catch {}
+
+  if (!fs.existsSync(dest) || cachedVersion !== currentVersion) {
+    fs.copyFileSync(src, dest);
+    if (process.platform !== 'win32') fs.chmodSync(dest, 0o755);
+    fs.writeFileSync(versionFile, currentVersion, 'utf8');
+  }
+
+  return wrapperDir;
+}
+
 function getServerScript() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'server', 'index.js');
@@ -170,12 +206,20 @@ app.whenReady().then(async () => {
     cwd = getServerCwd();
   }
 
+  // Prepend bundled Ollama directory to PATH so spawn('ollama') resolves it
+  // without requiring a system-level Ollama installation.
+  const ollamaBinDir = prepareBundledOllama();
+  const serverEnv = { ...process.env };
+  if (ollamaBinDir) {
+    serverEnv.PATH = ollamaBinDir + path.delimiter + (process.env.PATH || '');
+  }
+
   // Fork the Express server using Electron's bundled Node.js runtime.
   // utilityProcess.fork does not require a separate Node installation.
   serverProcess = utilityProcess.fork(scriptPath, [], {
     cwd,
     stdio: 'pipe',
-    env: { ...process.env },
+    env: serverEnv,
   });
 
   serverProcess.stdout.on('data', (data) => {
