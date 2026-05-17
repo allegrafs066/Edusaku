@@ -247,4 +247,28 @@ async function getIndexStatus() {
     }
 }
 
-module.exports = { indexFile, deleteFileFromIndex, retrieve, buildRAGPrompt, getIndexStatus };
+/**
+ * Remove vector chunks whose source file no longer exists in uploads/.
+ * @param {string[]} existingFilenames  List of currently uploaded filenames.
+ * @returns {number} Number of chunks removed.
+ */
+async function cleanOrphanChunks(existingFilenames) {
+    try {
+        const index = await getIndex();
+        const all = await index.listItems();
+        const orphans = all.filter(item => !existingFilenames.includes(item.metadata?.filename));
+        for (const item of orphans) {
+            await index.deleteItem(item.id);
+        }
+        if (orphans.length > 0) {
+            console.log(`[RAG] cleanOrphanChunks: removed ${orphans.length} orphan chunks.`);
+        }
+        return orphans.length;
+    } catch (err) {
+        console.error('[RAG] cleanOrphanChunks error:', err.message);
+        return 0;
+    }
+}
+
+module.exports = { indexFile, deleteFileFromIndex, retrieve, buildRAGPrompt, getIndexStatus, cleanOrphanChunks };
+

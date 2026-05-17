@@ -11,6 +11,7 @@ export interface Message {
 interface ChatAreaProps {
   dark: boolean;
   messages: Message[];
+  streamingContent?: string;
   input: string;
   isChatting: boolean;
   onInputChange: (v: string) => void;
@@ -182,7 +183,7 @@ const InputBar: React.FC<{
 
 // ── Main component ────────────────────────────────────────────────────────────
 const ChatArea: React.FC<ChatAreaProps> = ({
-  dark, messages, input, isChatting, onInputChange, onSend, onUploadClick, sessionTitle, onRetry,
+  dark, messages, streamingContent, input, isChatting, onInputChange, onSend, onUploadClick, sessionTitle, onRetry,
 }) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -225,10 +226,18 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   return (
     <div className={`flex flex-col h-full overflow-hidden ${bg}`}>
 
-      {/* Sticky session title */}
-      {sessionTitle && sessionTitle !== 'New Chat' && (
-        <div className="shrink-0 h-14 flex items-center justify-center pointer-events-none">
-          <span className={`text-sm font-medium ${textSecondary}`}>{sessionTitle}</span>
+      {/* Sticky session title — blur backdrop, messages scroll under */}
+      {sessionTitle && (
+        <div className={`shrink-0 sticky top-0 z-20 h-12 flex items-center justify-center backdrop-blur-md border-b pointer-events-none ${
+          dark ? 'bg-gray-950/70 border-gray-800/60' : 'bg-slate-50/70 border-slate-200/60'
+        }`}>
+          <span className={`text-sm font-semibold tracking-tight ${
+            sessionTitle === 'New Chat'
+              ? (dark ? 'text-gray-600' : 'text-slate-300')
+              : (dark ? 'text-gray-200' : 'text-slate-700')
+          }`}>
+            {sessionTitle !== 'New Chat' ? sessionTitle : ''}
+          </span>
         </div>
       )}
 
@@ -236,10 +245,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       <div className="flex-1 overflow-y-auto relative min-h-0">
 
         {/* Fade gradient at top */}
-        <div className={`sticky top-0 left-0 right-0 h-10 z-10 pointer-events-none ${
-          dark
-            ? 'bg-gradient-to-b from-gray-950 to-transparent'
-            : 'bg-gradient-to-b from-slate-50 to-transparent'
+        <div className={`sticky top-0 left-0 right-0 h-6 z-10 pointer-events-none ${
+          dark ? 'bg-gradient-to-b from-gray-950 to-transparent' : 'bg-gradient-to-b from-slate-50 to-transparent'
         }`} />
 
         <div className="max-w-3xl mx-auto px-6 pb-6 space-y-6">
@@ -287,17 +294,25 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             </div>
           ))}
 
-          {/* Typing indicator */}
+          {/* Typing indicator or streaming content */}
           {isChatting && (
             <div className="flex gap-3 items-start">
               <img src="/logo.png" alt="Edusaku" className="w-7 h-7 object-contain shrink-0 mt-1" />
-              <div className={`rounded-2xl rounded-tl-none px-4 py-3 flex gap-1.5 items-center ${
-                dark ? 'bg-gray-800' : 'bg-white'
-              }`}>
-                <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" />
-                <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:0.15s]" />
-                <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:0.3s]" />
-              </div>
+              {streamingContent ? (
+                <div className={`flex-1 text-sm ${textPrimary}`}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents(dark)}>
+                    {streamingContent}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <div className={`rounded-2xl rounded-tl-none px-4 py-3 flex gap-1.5 items-center ${
+                  dark ? 'bg-gray-800' : 'bg-white'
+                }`}>
+                  <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" />
+                  <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:0.15s]" />
+                  <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:0.3s]" />
+                </div>
+              )}
             </div>
           )}
 
