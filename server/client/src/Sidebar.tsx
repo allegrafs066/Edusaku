@@ -399,6 +399,7 @@ const UsagePopup: React.FC<{
 
     axios.get('/usage').then(r => { setUsage(r.data); setLoading(false); }).catch(() => setLoading(false));
   };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchUsage(); }, []);
 
   const fmt = (bytes: number) => {

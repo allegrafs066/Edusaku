@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bot, BookOpen, Upload, Shield, ChevronRight, Sparkles } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
