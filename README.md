@@ -68,13 +68,22 @@ Edusaku addresses a real problem: quality AI-assisted learning tools require int
 ### PC Server + Web UI
 - **Offline RAG pipeline** — PDF text extraction + Tesseract OCR for images → chunking → MiniLM embeddings → Vectra vector store
 - **Gemma 4 via Ollama** — The PC server auto-starts Ollama and serves the `gemma4:e2b` model
-- **Multi-session chat** — Create, rename, delete, and switch between multiple chat sessions
+- **Streaming responses** — SSE-based token-by-token streaming via `/chat/stream`; users see the answer form in real time
+- **Multi-session chat** — Create, rename, delete, pin, and switch between multiple chat sessions
+- **Persistent chat history** — All sessions and messages are stored in `localStorage`; data survives page refresh and server restarts
+- **Auto-generated session titles** — AI automatically names each session from the first message; title is saved and persists until manually renamed
+- **Smart "New Chat"** — Clicking "+ New Chat" reuses an existing empty session instead of creating duplicates
+- **Session ordering** — The most recently active session automatically rises to the top of the list (below pinned items)
+- **Pin sessions** — Pin any chat session to keep it permanently at the top of the sidebar
 - **Document library** — Grid view of all uploaded files with drag-and-drop upload support
+- **Orphan chunk cleanup** — On startup, the server automatically removes vector index entries whose source files no longer exist in `uploads/`
+- **Storage usage panel** — "Usage" menu in the sidebar shows live storage consumption: document library size, vector index size, chunk count, and total disk usage
 - **Markdown rendering** — AI responses rendered with full GFM (tables, code blocks, lists)
 - **QR code pairing** — Displays a QR code for instant mobile app connection
 - **Search** — Full-text search across documents and chat sessions
 - **Dark / light mode** — Persisted theme preference
 - **Retry & delete** — Retry last message or delete individual chat sessions
+- **Improved system prompt** — Bilingual (Indonesian/English), context-aware, education-focused instructions
 
 ---
 

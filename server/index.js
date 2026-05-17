@@ -7,7 +7,7 @@ const fs      = require('fs');
 const axios   = require('axios');
 const { spawn } = require('child_process');
 
-const { indexFile, deleteFileFromIndex, buildRAGPrompt, getIndexStatus } = require('./rag');
+const { indexFile, deleteFileFromIndex, buildRAGPrompt, getIndexStatus, cleanOrphanChunks } = require('./rag');
 
 const app  = express();
 const PORT = 3000;
@@ -56,12 +56,17 @@ async function generateAnswer(messages) {
         model:    OLLAMA_MODEL,
         messages,
         stream:   false,
-        options: {
-            num_predict: 512,
-            temperature: 0.7,
-        },
+        options: { num_predict: 512, temperature: 0.7 },
     }, { timeout: 180000 });
     return response.data.message?.content ?? '';
+}
+
+// ── Improved system prompt builder ────────────────────────────────────────────
+
+function buildSystemPrompt(hasContext, ragContext) {
+    const base = `You are Edusaku, an intelligent and friendly AI education assistant. You help teachers and students understand learning materials effectively. Always respond in the same language as the user's question (Indonesian or English). Provide accurate, structured, and easy-to-understand answers. If given document context, prioritize and cite that information.`;
+    if (hasContext) return base + `\n\nDocument context:\n${ragContext}`;
+    return base;
 }
 
 // ── IP helper ─────────────────────────────────────────────────────────────────
@@ -161,46 +166,111 @@ app.delete('/files/:filename', async (req, res) => {
     });
 });
 
-// RAG-augmented chat
+// RAG-augmented chat (non-streaming, kept for compatibility)
 app.post('/chat', async (req, res) => {
     const { prompt, history = [] } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
-
     try {
-        // Retrieve relevant document chunks for this query
         const ragContext = await buildRAGPrompt(prompt);
         const hasContext = ragContext !== prompt;
-
-        // Build Ollama messages array
-        const messages = [];
-
-        // System message
-        messages.push({
-            role: 'system',
-            content: hasContext
-                ? 'You are Edusaku, a helpful educational AI assistant. Use the following document context to answer accurately:\n\n' + ragContext
-                : 'You are Edusaku, a helpful educational AI assistant.',
-        });
-
-        // Prior conversation turns (last 10 to stay within context)
-        for (const msg of history.slice(-10)) {
-            messages.push({
-                role:    msg.role === 'user' ? 'user' : 'assistant',
-                content: msg.content,
-            });
-        }
-
-        // Current user message
-        messages.push({ role: 'user', content: prompt });
-
+        const messages = [
+            { role: 'system', content: buildSystemPrompt(hasContext, ragContext) },
+            ...history.slice(-10).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+            { role: 'user', content: prompt },
+        ];
         const answer = await generateAnswer(messages);
         res.json({ response: answer });
     } catch (error) {
         console.error('[Chat] Error:', error.message);
-        res.status(500).json({
-            error: 'AI model failed to generate a response.',
-            detail: error.message,
+        res.status(500).json({ error: 'AI model failed to generate a response.', detail: error.message });
+    }
+});
+
+// SSE streaming chat ──────────────────────────────────────────────────────────
+app.post('/chat/stream', async (req, res) => {
+    const { prompt, history = [] } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
+
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+    });
+
+    try {
+        const ragContext = await buildRAGPrompt(prompt);
+        const hasContext = ragContext !== prompt;
+        const messages = [
+            { role: 'system', content: buildSystemPrompt(hasContext, ragContext) },
+            ...history.slice(-10).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+            { role: 'user', content: prompt },
+        ];
+
+        if (!_ollamaReady) await ensureOllama();
+
+        const ollamaRes = await axios.post(OLLAMA_URL, {
+            model: OLLAMA_MODEL,
+            messages,
+            stream: true,
+            options: { num_predict: 1024, temperature: 0.7 },
+        }, { responseType: 'stream', timeout: 180000 });
+
+        let buf = '';
+        ollamaRes.data.on('data', (chunk) => {
+            buf += chunk.toString();
+            const lines = buf.split('\n');
+            buf = lines.pop() ?? '';
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const parsed = JSON.parse(line);
+                    const token = parsed.message?.content || '';
+                    if (token) res.write(`data: ${JSON.stringify({ token })}\n\n`);
+                    if (parsed.done) res.write('data: [DONE]\n\n');
+                } catch {}
+            }
         });
+        ollamaRes.data.on('end', () => { res.write('data: [DONE]\n\n'); res.end(); });
+        ollamaRes.data.on('error', (err) => {
+            console.error('[Stream] Ollama error:', err.message);
+            res.write(`data: ${JSON.stringify({ token: `\n\n**Error:** ${err.message}` })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
+        });
+        req.on('close', () => ollamaRes.data.destroy());
+    } catch (error) {
+        console.error('[Chat/Stream] Error:', error.message);
+        res.write(`data: ${JSON.stringify({ token: `**Error:** ${error.message}` })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+    }
+});
+
+// Usage / storage stats ───────────────────────────────────────────────────────
+app.get('/usage', async (req, res) => {
+    const getFolderSize = (dir) => {
+        if (!fs.existsSync(dir)) return 0;
+        let total = 0;
+        for (const f of fs.readdirSync(dir)) {
+            const fp = path.join(dir, f);
+            const s = fs.statSync(fp);
+            total += s.isDirectory() ? getFolderSize(fp) : s.size;
+        }
+        return total;
+    };
+    try {
+        const uploadsSize = getFolderSize(uploadDir);
+        const vectorSize  = getFolderSize(path.join(__dirname, 'vector_index'));
+        const status      = await getIndexStatus();
+        const fileCount   = fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir).length : 0;
+        res.json({
+            documents: { sizeBytes: uploadsSize, count: fileCount },
+            vectors:   { sizeBytes: vectorSize, chunkCount: status.totalChunks },
+            total:     { sizeBytes: uploadsSize + vectorSize },
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -242,8 +312,13 @@ app.listen(PORT, '0.0.0.0', () => {
             await Promise.all([
                 ensureOllama(),
                 (async () => {
-                    const { files: indexed } = await getIndexStatus();
+                    // Clean orphan chunks (files deleted without using the DELETE endpoint)
                     const uploaded = fs.readdirSync(uploadDir);
+                    const removed = await cleanOrphanChunks(uploaded);
+                    if (removed > 0) console.log(`[RAG] Cleaned ${removed} orphan chunk(s).`);
+
+                    // Index any new unindexed files
+                    const { files: indexed } = await getIndexStatus();
                     const toIndex = uploaded.filter(f => !indexed[f]);
                     if (toIndex.length > 0) {
                         console.log(`[RAG] Found ${toIndex.length} unindexed file(s), indexing now…`);

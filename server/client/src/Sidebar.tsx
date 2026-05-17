@@ -3,10 +3,12 @@ import {
   Smartphone, Upload, FileImage, Plus, MessageSquare, X,
   Trash2, PanelLeftOpen, PanelLeftClose, MoreVertical, Pencil, Check,
   AlertTriangle, FolderOpen, QrCode, Grid3X3, Search, FileText,
+  Pin, PinOff, BarChart2, HardDrive,
 } from 'lucide-react';
+import axios from 'axios';
 
 interface UploadFile { name: string; timestamp: string; }
-interface ChatSession { id: string; title: string; createdAt: string; }
+interface ChatSession { id: string; title: string; createdAt: string; lastActivityAt: string; pinned: boolean; }
 
 interface SidebarProps {
   dark: boolean;
@@ -27,6 +29,7 @@ interface SidebarProps {
   onSelectChat: (id: string) => void;
   onDeleteChat: (id: string) => void;
   onRenameChat: (id: string, title: string) => void;
+  onPinChat: (id: string) => void;
 }
 
 const getDisplayName = (f: string) => { const p = f.split('-'); return p.length > 2 ? p.slice(2).join('-') : f; };
@@ -266,12 +269,60 @@ const LibraryModal: React.FC<{
   );
 };
 
+// ── Usage Popup ──────────────────────────────────────────────────────────────
+const UsagePopup: React.FC<{ dark: boolean; onClose: () => void }> = ({ dark, onClose }) => {
+  const [usage, setUsage] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    axios.get('/usage').then(r => { setUsage(r.data); setLoading(false); }).catch(() => setLoading(false));
+  }, []);
+  const fmt = (bytes: number) => {
+    if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(2) + ' GB';
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB';
+    if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return bytes + ' B';
+  };
+  const bg = dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200';
+  const sub = dark ? 'text-gray-400' : 'text-slate-500';
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className={`relative z-10 w-full max-w-sm rounded-3xl shadow-2xl border overflow-hidden ${bg}`}>
+        <div className={`flex items-center justify-between px-6 py-4 border-b ${dark ? 'border-gray-700' : 'border-slate-100'}`}>
+          <div className="flex items-center gap-2"><BarChart2 size={18} className="text-blue-500" /><h3 className={`font-bold text-base ${dark ? 'text-white' : 'text-slate-800'}`}>Storage Usage</h3></div>
+          <button onClick={onClose} className={`p-1.5 rounded-full transition-colors ${dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-100 text-slate-500'}`}><X size={16} /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          {loading && <p className={`text-sm text-center ${sub}`}>Loading…</p>}
+          {!loading && !usage && <p className={`text-sm text-center ${sub}`}>Could not load usage data.</p>}
+          {usage && (
+            <>
+              <div className={`flex items-center justify-between p-3 rounded-2xl ${dark ? 'bg-gray-800' : 'bg-slate-50'}`}>
+                <div className="flex items-center gap-2"><FolderOpen size={16} className="text-blue-500" /><span className={`text-sm font-medium ${dark ? 'text-gray-200' : 'text-slate-700'}`}>Document Library</span></div>
+                <div className="text-right"><p className={`text-sm font-bold ${dark ? 'text-white' : 'text-slate-800'}`}>{fmt(usage.documents.sizeBytes)}</p><p className={`text-[10px] ${sub}`}>{usage.documents.count} files</p></div>
+              </div>
+              <div className={`flex items-center justify-between p-3 rounded-2xl ${dark ? 'bg-gray-800' : 'bg-slate-50'}`}>
+                <div className="flex items-center gap-2"><HardDrive size={16} className="text-purple-500" /><span className={`text-sm font-medium ${dark ? 'text-gray-200' : 'text-slate-700'}`}>Vector Index</span></div>
+                <div className="text-right"><p className={`text-sm font-bold ${dark ? 'text-white' : 'text-slate-800'}`}>{fmt(usage.vectors.sizeBytes)}</p><p className={`text-[10px] ${sub}`}>{usage.vectors.chunkCount} chunks</p></div>
+              </div>
+              <div className={`flex items-center justify-between p-3 rounded-2xl border-2 ${dark ? 'bg-blue-900/20 border-blue-700/40' : 'bg-blue-50 border-blue-200'}`}>
+                <span className={`text-sm font-bold ${dark ? 'text-blue-300' : 'text-blue-700'}`}>Total Used</span>
+                <span className={`text-sm font-bold ${dark ? 'text-blue-300' : 'text-blue-700'}`}>{fmt(usage.total.sizeBytes)}</span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Chat Row ──────────────────────────────────────────────────────────────────
 const ChatRow: React.FC<{
   dark: boolean; session: ChatSession; isActive: boolean;
-  onSelect: () => void; onDelete: () => void; onRename: (t: string) => void;
+  onSelect: () => void; onDelete: () => void; onRename: (t: string) => void; onPin: () => void;
   sub: string; hoverBg: string;
-}> = ({ dark, session, isActive, onSelect, onDelete, onRename, sub, hoverBg }) => {
+}> = ({ dark, session, isActive, onSelect, onDelete, onRename, onPin, sub, hoverBg }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(session.title);
@@ -299,7 +350,7 @@ const ChatRow: React.FC<{
           </div>
         ) : (
           <button onClick={onSelect} className="flex items-center gap-2 px-3 py-2.5 flex-1 min-w-0 text-left">
-            <MessageSquare size={13} className={`shrink-0 opacity-50 ${isActive ? (dark ? 'text-blue-300' : 'text-blue-600') : ''}`} />
+            {session.pinned ? <Pin size={11} className="shrink-0 text-amber-500" /> : <MessageSquare size={13} className={`shrink-0 opacity-50 ${isActive ? (dark ? 'text-blue-300' : 'text-blue-600') : ''}`} />}
             <p className={`text-xs font-medium truncate flex-1 ${isActive ? (dark ? 'text-blue-300' : 'text-blue-700') : (dark ? 'text-gray-300' : 'text-slate-700')}`}>{session.title}</p>
           </button>
         )}
@@ -307,8 +358,9 @@ const ChatRow: React.FC<{
           <div className="relative pr-1.5" ref={menuRef}>
             <button onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }} className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${menuOpen ? 'opacity-100' : ''} ${dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-200 text-slate-500'}`}><MoreVertical size={12} /></button>
             {menuOpen && (
-              <div className={`absolute right-0 top-8 z-50 w-32 rounded-2xl shadow-xl border overflow-hidden ${dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'}`}>
+              <div className={`absolute right-0 top-8 z-50 w-36 rounded-2xl shadow-xl border overflow-hidden ${dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-200'}`}>
                 <button onClick={() => { setMenuOpen(false); setEditing(true); setEditValue(session.title); }} className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs transition-colors ${dark ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-slate-50 text-slate-700'}`}><Pencil size={12} /> Rename</button>
+                <button onClick={() => { setMenuOpen(false); onPin(); }} className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs transition-colors ${dark ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-slate-50 text-slate-700'}`}>{session.pinned ? <><PinOff size={12} /> Unpin</> : <><Pin size={12} /> Pin</>}</button>
                 <button onClick={() => { setMenuOpen(false); setConfirmDelete(true); }} className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs transition-colors ${dark ? 'hover:bg-red-900/40 text-red-400' : 'hover:bg-red-50 text-red-600'}`}><Trash2 size={12} /> Delete</button>
               </div>
             )}
@@ -325,11 +377,12 @@ const Sidebar: React.FC<SidebarProps> = ({
   dark, isOpen, onOpen, onClose,
   qrCodeDataUrl, serverInfo,
   uploads, isUploading, uploadProgress, onUploadClick, onDrop, onDeleteUpload,
-  sessions, activeChatId, onNewChat, onSelectChat, onDeleteChat, onRenameChat,
+  sessions, activeChatId, onNewChat, onSelectChat, onDeleteChat, onRenameChat, onPinChat,
 }) => {
   const [showQR, setShowQR] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
 
   const railBg = dark ? 'bg-gray-900 border-gray-700/60' : 'bg-white border-slate-200';
   const panelBg = dark ? 'bg-gray-900' : 'bg-white';
@@ -381,6 +434,11 @@ const Sidebar: React.FC<SidebarProps> = ({
               {uploads.length > 0 && <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${dark ? 'bg-gray-700 text-gray-400' : 'bg-slate-100 text-slate-500'}`}>{uploads.length}</span>}
             </button>
 
+            {/* Usage */}
+            <button onClick={() => setShowUsage(true)} className={menuItem}>
+              <BarChart2 size={14} className="text-blue-500" />Usage
+            </button>
+
             {/* Divider ONLY above New Chat */}
             <div className={`my-2 h-px mx-1 ${dark ? 'bg-gray-700/60' : 'bg-slate-100'}`} />
 
@@ -399,7 +457,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                 : sessions.map(s => (
                   <ChatRow key={s.id} dark={dark} session={s} isActive={activeChatId === s.id}
                     onSelect={() => onSelectChat(s.id)} onDelete={() => onDeleteChat(s.id)}
-                    onRename={t => onRenameChat(s.id, t)} sub={sub} hoverBg={hoverBg} />
+                    onRename={t => onRenameChat(s.id, t)} onPin={() => onPinChat(s.id)}
+                    sub={sub} hoverBg={hoverBg} />
                 ))
               }
             </div>
@@ -410,6 +469,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {showQR && <QRPopup dark={dark} qrCodeDataUrl={qrCodeDataUrl} serverInfo={serverInfo} onClose={() => setShowQR(false)} />}
       {showLibrary && <LibraryModal dark={dark} uploads={uploads} isUploading={isUploading} uploadProgress={uploadProgress} onUploadClick={onUploadClick} onDrop={onDrop} onDelete={onDeleteUpload} onClose={() => setShowLibrary(false)} />}
       {showSearch && <SearchPopup dark={dark} uploads={uploads} sessions={sessions} onSelectChat={id => { onSelectChat(id); }} onClose={() => setShowSearch(false)} />}
+      {showUsage && <UsagePopup dark={dark} onClose={() => setShowUsage(false)} />}
     </>
   );
 };
