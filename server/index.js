@@ -7,7 +7,7 @@ const fs      = require('fs');
 const axios   = require('axios');
 const { spawn } = require('child_process');
 
-const { indexFile, deleteFileFromIndex, buildRAGPrompt, getIndexStatus, cleanOrphanChunks } = require('./rag');
+const { indexFile, deleteFileFromIndex, buildRAGPrompt, getIndexStatus, cleanOrphanChunks, clearIndex } = require('./rag');
 
 const app  = express();
 const PORT = 3000;
@@ -172,6 +172,31 @@ app.delete('/files/:filename', async (req, res) => {
 
         res.json({ message: 'File deleted successfully' });
     });
+});
+
+// Delete ALL files
+app.delete('/files', async (req, res) => {
+    try {
+        const files = fs.readdirSync(uploadDir);
+        for (const file of files) {
+            fs.unlinkSync(path.join(uploadDir, file));
+        }
+        res.json({ message: 'All files deleted successfully' });
+    } catch (error) {
+        console.error('[Delete All Files] Error:', error);
+        res.status(500).json({ error: 'Failed to delete files' });
+    }
+});
+
+// Delete ALL vector index
+app.delete('/index', async (req, res) => {
+    try {
+        await clearIndex();
+        res.json({ message: 'Vector index cleared successfully' });
+    } catch (error) {
+        console.error('[Delete Index] Error:', error);
+        res.status(500).json({ error: 'Failed to clear vector index' });
+    }
 });
 
 // RAG-augmented chat (non-streaming, kept for compatibility)

@@ -219,16 +219,19 @@ const App: React.FC = () => {
     });
   };
 
-  const handleRenameChat = (id: string, title: string) => {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, title } : s));
-    // auto-saved via useEffect
+  const handleRenameChat = (id: string, title: string) => setSessions(prev => prev.map(s => s.id === id ? { ...s, title } : s));
+  const handlePinChat = (id: string) => setSessions(prev => prev.map(s => s.id === id ? { ...s, pinned: !s.pinned } : s));
+
+  const handleClearAllChats = () => {
+    setSessions([]);
+    setActiveChatId(null);
   };
 
-  const handlePinChat = (id: string) => {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, pinned: !s.pinned } : s));
+  const handleClearAllUploads = () => {
+    fetchUploads();
   };
 
-  // ── Chat input & send (with streaming) ────────────────────────────────────
+  // ── Session side effects ─────────────────────────────────────────────────────
   const [input, setInput] = useState('');
   const [isChatting, setIsChatting] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
@@ -405,6 +408,8 @@ const App: React.FC = () => {
           onDeleteChat={handleDeleteChat}
           onRenameChat={handleRenameChat}
           onPinChat={handlePinChat}
+          onClearAllChats={handleClearAllChats}
+          onClearAllUploads={handleClearAllUploads}
         />
         <main
           className="flex-1 flex flex-col overflow-hidden transition-all duration-300 min-h-0"
