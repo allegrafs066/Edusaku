@@ -76,9 +76,7 @@ build.log
 buck-out/
 
 # ─── ML Models (too large for git) ───────────────────────────────────────────
-*.gguf
 *.ggml
-server/models/*.gguf
 
 # ─── Server runtime data (uploads, vector index) ─────────────────────────────
 server/uploads/
