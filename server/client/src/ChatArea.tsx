@@ -78,6 +78,27 @@ const mdComponents = (dark: boolean) => ({
   td: ({ children }: any) => <td className="px-3 py-2">{children}</td>,
 });
 
+const CopyButton: React.FC<{ text: string; dark: boolean }> = ({ text, dark }) => {
+  const [copied, setCopied] = useState(false);
+  const handle = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={handle}
+      className={`p-1.5 rounded-lg transition-colors ${
+        dark
+          ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+          : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+      }`}
+    >
+      {copied ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  );
+};
+
 // ── File attachment chip ──────────────────────────────────────────────────────
 const fileIcon = (name: string) => {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
