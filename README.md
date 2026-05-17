@@ -77,12 +77,14 @@ Edusaku addresses a real problem: quality AI-assisted learning tools require int
 - **Pin sessions** — Pin any chat session to keep it permanently at the top of the sidebar
 - **Document library** — Grid view of all uploaded files with drag-and-drop upload support
 - **Orphan chunk cleanup** — On startup, the server automatically removes vector index entries whose source files no longer exist in `uploads/`
-- **Storage usage panel** — "Usage" menu in the sidebar shows live storage consumption: document library size, vector index size, chunk count, and total disk usage
+- **Storage & Usage monitoring** — Breakdown of Chat Sessions, Document Library, and Vector Index storage, with "Clear all data" per category requiring a "delete" confirmation
+- **Bookmark system** — "Like" an AI response to save it, accessible via the sidebar bookmarks menu
+- **AI Response Feedback** — Like & dislike feedback on every AI response. Disliking opens a categorical error report
+- **Message Timestamps & Actions** — Timestamps (e.g., "17 May 2026, 20:18") on every message, plus Edit and Retry actions for user messages
 - **Markdown rendering** — AI responses rendered with full GFM (tables, code blocks, lists)
 - **QR code pairing** — Displays a QR code for instant mobile app connection
-- **Search** — Full-text search across documents and chat sessions
+- **Improved global search** — Two-tier search prioritizing session titles, with a fallback to highlighting matched content inside conversations
 - **Dark / light mode** — Persisted theme preference
-- **Retry & delete** — Retry last message or delete individual chat sessions
 - **Improved system prompt** — Bilingual (Indonesian/English), context-aware, education-focused instructions
 
 ---
@@ -403,9 +405,11 @@ The current release focuses on the web experience (PC server + browser UI). The 
 - **iOS support** — Extend the React Native app to iOS (currently Android-only)
 
 ### Desktop App (Electron)
-The PC server + web UI is planned to be packaged as a standalone **Electron desktop application**, eliminating the need to run a terminal and making it accessible to non-technical teachers.
+- **Auto-start Ollama / Electron packaging** — Bundle server and Ollama into a standalone desktop app for non-technical users.
 
 ### General
+- **Vision input via chat** — Direct image analysis via Gemma 4 multimodal. Architecture is vision-ready; awaiting full multimodal support in Gemma 4 E2B edge model. Currently, images can be processed via Document Library using local Tesseract OCR.
+- **Document generation** — Generate PDF or Word documents from AI responses, such as exam questions or lesson plans derived from uploaded materials.
 - **Multi-language OCR** — Expand Tesseract language support beyond English and Indonesian
 - **Voice input** — Speech-to-text for hands-free question asking
 - **Quiz generation** — Auto-generate practice questions from uploaded documents

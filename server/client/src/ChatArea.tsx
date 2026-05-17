@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Send, Plus, Copy, RotateCcw, Check, Maximize2, FileText, Image, Smartphone, X, Loader2 } from 'lucide-react';
+import { Send, Plus, Copy, RotateCcw, Check, Maximize2, FileText, Image, Smartphone, X, Loader2, Pencil, ThumbsUp, ThumbsDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -8,8 +8,9 @@ import { QRPopup } from './Sidebar';
 
 export interface Message {
   role: 'user' | 'assistant';
-  content: string;
+  content: string | any[];
   fileAttachment?: { name: string; type: string };
+  timestamp?: string;
 }
 
 interface ChatAreaProps {
@@ -21,10 +22,17 @@ interface ChatAreaProps {
   isProcessingFile?: boolean;
   qrCodeDataUrl?: string;
   serverInfo?: { ip: string; port: number } | null;
+  pendingImage?: { base64: string; name: string } | null;
+  onClearImage?: () => void;
+  onImageSelected?: (file: File) => void;
   onInputChange: (v: string) => void;
   onSend: (file: File | null) => void;
   sessionTitle?: string;
-  onRetry?: () => void;
+  onRetry?: () => void; // for legacy
+  onRetryMessage?: (idx: number) => void;
+  onEditMessage?: (idx: number) => void;
+  onLikeMessage?: (msg: Message) => void;
+  onDislikeMessage?: (msg: Message, feedback: any) => void;
 }
 
 // ── Code block with language label + copy button ─────────────────────────────
@@ -125,6 +133,15 @@ const FileChip: React.FC<{ name: string; dark: boolean; onRemove: () => void }> 
   </div>
 );
 
+const ImageChip: React.FC<{ image: { base64: string; name: string }; dark: boolean; onRemove: () => void }> = ({ image, dark, onRemove }) => (
+  <div className={`relative inline-block mb-2 group rounded-xl overflow-hidden border ${dark ? 'border-gray-700' : 'border-slate-200'}`}>
+    <img src={image.base64} alt={image.name} className="h-16 object-cover" />
+    <button onClick={onRemove} className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+      <X size={12} />
+    </button>
+  </div>
+);
+
 // ── Upload picker menu ────────────────────────────────────────────────────────
 const UploadMenu: React.FC<{
   dark: boolean;
@@ -171,20 +188,74 @@ const UploadMenu: React.FC<{
   );
 };
 
+// ── Feedback Modal ────────────────────────────────────────────────────────────
+const FeedbackModal: React.FC<{
+  dark: boolean;
+  onSubmit: (feedback: { category: string; comment: string }) => void;
+  onCancel: () => void;
+}> = ({ dark, onSubmit, onCancel }) => {
+  const [category, setCategory] = useState('');
+  const [comment, setComment] = useState('');
+  const categories = [
+    'Hallucination', 'Didn\'t follow instructions', 'Incorrect information',
+    'Incomplete response', 'Offensive or unsafe content', 'Other'
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+      <div className={`relative z-10 w-full max-w-md rounded-3xl shadow-2xl border p-6 ${dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200'}`}>
+        <h3 className={`font-bold text-lg mb-4 ${dark ? 'text-white' : 'text-slate-800'}`}>Submit Feedback</h3>
+        <div className="space-y-3 mb-5">
+          {categories.map(c => (
+            <label key={c} className="flex items-center gap-3 cursor-pointer group">
+              <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${
+                category === c 
+                  ? 'border-blue-500 bg-blue-500' 
+                  : (dark ? 'border-gray-600 group-hover:border-blue-400' : 'border-slate-300 group-hover:border-blue-400')
+              }`}>
+                {category === c && <div className="w-2 h-2 rounded-full bg-white" />}
+              </div>
+              <span className={`text-sm ${dark ? 'text-gray-300' : 'text-slate-700'}`}>{c}</span>
+            </label>
+          ))}
+        </div>
+        <textarea
+          value={comment}
+          onChange={e => setComment(e.target.value)}
+          placeholder="Tell us more (optional)"
+          rows={3}
+          className={`w-full p-3 rounded-xl border text-sm resize-none outline-none focus:ring-2 focus:ring-blue-500/50 transition-all ${
+            dark ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' : 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400'
+          }`}
+        />
+        <p className={`text-xs mt-3 mb-6 ${dark ? 'text-gray-500' : 'text-slate-400'}`}>Your feedback helps improve future responses.</p>
+        <div className="flex gap-3 justify-end">
+          <button onClick={onCancel} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Cancel</button>
+          <button onClick={() => onSubmit({ category, comment })} disabled={!category} className="px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Submit</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Input bar ─────────────────────────────────────────────────────────────────
 const InputBar: React.FC<{
   dark: boolean;
   input: string;
   isChatting: boolean;
   pendingFile: File | null;
+  pendingImage?: { base64: string; name: string } | null;
   qrCodeDataUrl?: string;
   serverInfo?: { ip: string; port: number } | null;
   onInputChange: (v: string) => void;
   onSend: () => void;
   onFileSelected: (f: File) => void;
+  onImageSelected?: (f: File) => void;
   onRemovePendingFile: () => void;
+  onRemovePendingImage?: () => void;
   onShowQR: () => void;
-}> = ({ dark, input, isChatting, pendingFile, onInputChange, onSend, onFileSelected, onRemovePendingFile, onShowQR }) => {
+}> = ({ dark, input, isChatting, pendingFile, pendingImage, onInputChange, onSend, onFileSelected, onImageSelected, onRemovePendingFile, onRemovePendingImage, onShowQR }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -203,7 +274,14 @@ const InputBar: React.FC<{
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) { onFileSelected(f); setShowMenu(false); }
+    if (f) {
+      if (f.type.startsWith('image/')) {
+        onImageSelected?.(f);
+      } else {
+        onFileSelected(f);
+      }
+      setShowMenu(false);
+    }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -221,6 +299,10 @@ const InputBar: React.FC<{
         <div className="mb-2">
           <FileChip name={pendingFile.name} dark={dark} onRemove={onRemovePendingFile} />
         </div>
+      )}
+      
+      {pendingImage && (
+        <ImageChip image={pendingImage} dark={dark} onRemove={() => onRemovePendingImage?.()} />
       )}
 
       <div className={`rounded-2xl border ${boxBg} overflow-visible relative`}>
@@ -261,7 +343,7 @@ const InputBar: React.FC<{
             title="Attach file">
             <Plus size={18} />
           </button>
-          <button onClick={onSend} disabled={(!input.trim() && !pendingFile) || isChatting}
+          <button onClick={onSend} disabled={(!input.trim() && !pendingFile && !pendingImage) || isChatting}
             className="w-9 h-9 flex items-center justify-center bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl transition-all">
             <Send size={16} />
           </button>
@@ -269,7 +351,7 @@ const InputBar: React.FC<{
       </div>
 
       <p className={`text-[10px] text-center mt-2 ${textSecondary}`}>
-        Powered by Gemma 4 via Ollama · runs locally
+        Powered by Gemma 4 via Ollama · runs locally · Gemma 4 may make mistakes, please verify important information.
       </p>
     </div>
   );
@@ -278,11 +360,14 @@ const InputBar: React.FC<{
 // ── Main component ────────────────────────────────────────────────────────────
 const ChatArea: React.FC<ChatAreaProps> = ({
   dark, messages, streamingContent, input, isChatting, isProcessingFile,
-  qrCodeDataUrl, serverInfo, onInputChange, onSend, sessionTitle, onRetry,
+  qrCodeDataUrl, serverInfo, pendingImage, onClearImage, onImageSelected, onInputChange, onSend, sessionTitle, onRetryMessage, onEditMessage,
+  onLikeMessage, onDislikeMessage
 }) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showQR, setShowQR] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [dislikeIdx, setDislikeIdx] = useState<number | null>(null);
 
   const handleSend = useCallback(() => {
     onSend(pendingFile);
@@ -315,10 +400,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               input={input}
               isChatting={isChatting}
               pendingFile={pendingFile}
+              pendingImage={pendingImage}
               onInputChange={onInputChange}
               onSend={handleSend}
               onFileSelected={setPendingFile}
+              onImageSelected={onImageSelected}
               onRemovePendingFile={() => setPendingFile(null)}
+              onRemovePendingImage={onClearImage}
               onShowQR={() => setShowQR(true)}
             />
           </div>
@@ -353,58 +441,126 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         }`} />
 
         <div className="max-w-3xl mx-auto px-6 pb-6 space-y-6">
-          {messages.map((msg, idx) => (
+          {(() => {
+            let lastUserIdx = -1;
+            for (let i = messages.length - 1; i >= 0; i--) {
+              if (messages[i].role === 'user') {
+                lastUserIdx = i;
+                break;
+              }
+            }
+            return messages.map((msg, idx) => {
+              const isLast = idx === messages.length - 1;
+              const isLastUserMsg = idx === lastUserIdx;
+              const textContent = Array.isArray(msg.content) ? msg.content.find(c=>c.type==='text')?.text || '' : msg.content;
+            
+            return (
             <div key={idx}>
               {msg.role === 'user' ? (
                 <div className="flex flex-col items-end gap-1">
-                  {/* File attachment chip above user message */}
                   {msg.fileAttachment && (
-                    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+                    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium mb-1 ${
                       dark ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-slate-50 border-slate-200 text-slate-600'
                     }`}>
                       {fileIcon(msg.fileAttachment.name)}
                       <span>{msg.fileAttachment.name}</span>
                     </div>
                   )}
+                  {msg.content && Array.isArray(msg.content) && msg.content.some(c => c.type === 'image_url') && (
+                    <div className="mb-1 rounded-xl overflow-hidden border border-slate-200 max-w-[200px]">
+                      <img src={msg.content.find(c => c.type === 'image_url')?.image_url?.url} alt="Attached" className="w-full" />
+                    </div>
+                  )}
                   <div className={`max-w-[75%] px-4 py-3 rounded-2xl rounded-tr-none text-sm leading-relaxed ${
                     dark ? 'bg-gray-800 text-gray-100' : 'bg-slate-100 text-slate-800'
                   }`}>
-                    {msg.content}
+                    {textContent}
+                  </div>
+                  <div className={`flex gap-2 items-center mt-1`}>
+                    {msg.timestamp && (
+                      <span className={`text-[10px] mr-2 ${dark ? 'text-gray-500' : 'text-slate-400'}`}>
+                        {new Date(msg.timestamp).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                    {!isChatting && (
+                      <div className="flex gap-1">
+                        <CopyButton text={textContent} dark={dark} />
+                        <button onClick={() => onRetryMessage?.(idx)} title="Retry" className={`p-1.5 rounded-lg transition-colors ${dark ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-800' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
+                          <RotateCcw size={14} />
+                        </button>
+                        {isLastUserMsg && (
+                          <button onClick={() => onEditMessage?.(idx)} title="Edit" className={`p-1.5 rounded-lg transition-colors ${dark ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-800' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>
+                            <Pencil size={14} />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
-                <div className="flex gap-3 items-start">
-                  <img
-                    src="/logo.png"
-                    alt="Edusaku"
-                    className="w-7 h-7 object-contain shrink-0 mt-1"
-                  />
-                  <div className="flex-1">
-                    <div className={`text-sm ${textPrimary}`}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents(dark)}>
-                        {msg.content}
-                      </ReactMarkdown>
-                    </div>
-                    <div className="flex gap-1 mt-2">
-                      <CopyButton text={msg.content} dark={dark} />
-                      {onRetry && idx === messages.length - 1 && (
+                <div className="flex flex-col items-start gap-1">
+                  <div className="flex gap-3 items-start w-full">
+                    <img
+                      src="/logo.png"
+                      alt="Edusaku"
+                      className="w-7 h-7 object-contain shrink-0 mt-1"
+                    />
+                    <div className="flex-1 w-full min-w-0">
+                      <div className={`text-sm ${textPrimary}`}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents(dark)}>
+                          {textContent}
+                        </ReactMarkdown>
+                      </div>
+                      <div className="flex gap-1 mt-2">
+                        <CopyButton text={textContent} dark={dark} />
+                        {!isChatting && isLast && (
+                          <button
+                            onClick={() => onRetryMessage?.(idx)}
+                            title="Retry"
+                            className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 ${
+                              dark
+                                ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+                                : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            <RotateCcw size={14} />
+                          </button>
+                        )}
                         <button
-                          onClick={onRetry}
+                          onClick={() => {
+                            onLikeMessage?.(msg);
+                            setShowToast(true);
+                            setTimeout(() => setShowToast(false), 3000);
+                          }}
+                          title="Like"
                           className={`p-1.5 rounded-lg transition-colors ${
                             dark
                               ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
                               : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
                           }`}
                         >
-                          <RotateCcw size={14} />
+                          <ThumbsUp size={14} />
                         </button>
-                      )}
+                        <button
+                          onClick={() => setDislikeIdx(idx)}
+                          title="Dislike"
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            dark
+                              ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+                              : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          <ThumbsDown size={14} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
             </div>
-          ))}
+            );
+            });
+          })()}
 
           {/* Processing file notification */}
           {isProcessingFile && !isChatting && (
@@ -452,12 +608,15 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           input={input}
           isChatting={isChatting}
           pendingFile={pendingFile}
+          pendingImage={pendingImage}
           qrCodeDataUrl={qrCodeDataUrl}
           serverInfo={serverInfo}
           onInputChange={onInputChange}
           onSend={handleSend}
           onFileSelected={setPendingFile}
+          onImageSelected={onImageSelected}
           onRemovePendingFile={() => setPendingFile(null)}
+          onRemovePendingImage={onClearImage}
           onShowQR={() => setShowQR(true)}
         />
       </div>
@@ -471,6 +630,27 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           onClose={() => setShowQR(false)}
         />
       )}
+
+      {/* Dislike Feedback Modal */}
+      {dislikeIdx !== null && (
+        <FeedbackModal
+          dark={dark}
+          onCancel={() => setDislikeIdx(null)}
+          onSubmit={(feedback) => {
+            onDislikeMessage?.(messages[dislikeIdx], feedback);
+            setDislikeIdx(null);
+          }}
+        />
+      )}
+
+      {/* Toast Notification */}
+      <div className={`fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl shadow-xl transition-all duration-300 ${
+        showToast ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+      } ${dark ? 'bg-gray-800 text-white border border-gray-700' : 'bg-white text-slate-800 border border-slate-200'}`}>
+        <div className="flex items-center gap-2 text-sm font-medium">
+          Saved to Bookmarks <Check size={14} className="text-green-500" />
+        </div>
+      </div>
     </div>
   );
 };
