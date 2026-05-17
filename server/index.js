@@ -113,7 +113,8 @@ const upload = multer({
 // ── Middleware ────────────────────────────────────────────────────────────────
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'client/build')));
 app.use('/uploads', express.static(uploadDir));
 
@@ -201,15 +202,26 @@ app.delete('/index', async (req, res) => {
 
 // RAG-augmented chat (non-streaming, kept for compatibility)
 app.post('/chat', async (req, res) => {
-    const { prompt, history = [] } = req.body;
+    const { prompt, history = [], images = [] } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
     try {
         const ragContext = await buildRAGPrompt(prompt);
         const hasContext = ragContext !== prompt;
+
+        const cleanImages = Array.isArray(images) 
+            ? images.map(img => img.includes(',') ? img.split(',')[1] : img) 
+            : [];
+
+        const mappedHistory = history.slice(-10).map(m => {
+            const role = m.role === 'user' ? 'user' : 'assistant';
+            const content = Array.isArray(m.content) ? m.content.find(c => c.type === 'text')?.text || '' : m.content || '';
+            return { role, content };
+        });
+
         const messages = [
-            { role: 'system', content: buildSystemPrompt(hasContext, ragContext) },
-            ...history.slice(-10).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-            { role: 'user', content: prompt },
+            { role: 'system', content: buildSystemPrompt(hasContext, hasContext ? ragContext : '') },
+            ...mappedHistory,
+            { role: 'user', content: prompt, ...(cleanImages.length > 0 ? { images: cleanImages } : {}) }
         ];
         const answer = await generateAnswer(messages);
         res.json({ response: answer });
@@ -221,7 +233,7 @@ app.post('/chat', async (req, res) => {
 
 // SSE streaming chat ──────────────────────────────────────────────────────────
 app.post('/chat/stream', async (req, res) => {
-    const { prompt, history = [] } = req.body;
+    const { prompt, history = [], images = [] } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     res.writeHead(200, {
@@ -234,10 +246,21 @@ app.post('/chat/stream', async (req, res) => {
     try {
         const ragContext = await buildRAGPrompt(prompt);
         const hasContext = ragContext !== prompt;
+
+        const cleanImages = Array.isArray(images) 
+            ? images.map(img => img.includes(',') ? img.split(',')[1] : img) 
+            : [];
+
+        const mappedHistory = history.slice(-10).map(m => {
+            const role = m.role === 'user' ? 'user' : 'assistant';
+            const content = Array.isArray(m.content) ? m.content.find(c => c.type === 'text')?.text || '' : m.content || '';
+            return { role, content };
+        });
+
         const messages = [
-            { role: 'system', content: buildSystemPrompt(hasContext, ragContext) },
-            ...history.slice(-10).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-            { role: 'user', content: prompt },
+            { role: 'system', content: buildSystemPrompt(hasContext, hasContext ? ragContext : '') },
+            ...mappedHistory,
+            { role: 'user', content: prompt, ...(cleanImages.length > 0 ? { images: cleanImages } : {}) },
         ];
 
         if (!_ollamaReady) await ensureOllama();
@@ -264,16 +287,21 @@ app.post('/chat/stream', async (req, res) => {
                 } catch {}
             }
         });
-        ollamaRes.data.on('end', () => { res.write('data: [DONE]\n\n'); res.end(); });
+        
+        ollamaRes.data.on('end', () => { 
+            res.write('data: [DONE]\n\n'); 
+            res.end(); 
+        });
+        
         ollamaRes.data.on('error', (err) => {
             console.error('[Stream] Ollama error:', err.message);
-            res.write(`data: ${JSON.stringify({ token: `\n\n**Error:** ${err.message}` })}\n\n`);
+            res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
             res.write('data: [DONE]\n\n');
             res.end();
         });
         req.on('close', () => ollamaRes.data.destroy());
     } catch (error) {
-        console.error('[Chat/Stream] Error:', error.message);
+        console.error('[Chat/Stream] Error:', error.message, error.response?.data);
         res.write(`data: ${JSON.stringify({ token: `**Error:** ${error.message}` })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -325,6 +353,31 @@ app.post('/rag/reindex/:filename', async (req, res) => {
     deleteFileFromIndex(filename)
         .then(() => indexFile(filePath, filename))
         .catch(err => console.error('[Reindex] Error:', err.message));
+});
+
+// Feedback Endpoint
+app.post('/feedback', express.json({ limit: '50mb' }), (req, res) => {
+    try {
+        const { feedback } = req.body;
+        if (!feedback) return res.status(400).json({ error: 'Feedback data required' });
+        
+        const feedbackFile = path.join(__dirname, 'feedback.json');
+        let data = [];
+        if (fs.existsSync(feedbackFile)) {
+            data = JSON.parse(fs.readFileSync(feedbackFile, 'utf8'));
+        }
+        
+        data.push({
+            ...feedback,
+            timestamp: new Date().toISOString(),
+        });
+        
+        fs.writeFileSync(feedbackFile, JSON.stringify(data, null, 2), 'utf8');
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[Feedback] Error saving feedback:', err.message);
+        res.status(500).json({ error: 'Failed to save feedback' });
+    }
 });
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'client/build/index.html'));

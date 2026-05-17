@@ -3,12 +3,12 @@ import {
   Smartphone, Upload, FileImage, Plus, MessageSquare, X,
   Trash2, PanelLeftOpen, PanelLeftClose, MoreVertical, Pencil, Check,
   AlertTriangle, FolderOpen, QrCode, Grid3X3, Search, FileText,
-  Pin, PinOff, BarChart2, HardDrive,
+  Pin, PinOff, BarChart2, HardDrive, Bookmark, BookmarkPlus
 } from 'lucide-react';
 import axios from 'axios';
 
 interface UploadFile { name: string; timestamp: string; }
-interface ChatSession { id: string; title: string; createdAt: string; lastActivityAt: string; pinned: boolean; }
+interface ChatSession { id: string; title: string; createdAt: string; lastActivityAt: string; pinned: boolean; messages: { role: string; content: any }[]; }
 
 interface SidebarProps {
   dark: boolean;
@@ -32,6 +32,16 @@ interface SidebarProps {
   onPinChat: (id: string) => void;
   onClearAllChats: () => void;
   onClearAllUploads: () => void;
+  bookmarks: BookmarkType[];
+  onDeleteBookmark: (id: string) => void;
+}
+
+export interface BookmarkType {
+  id: string;
+  sessionId: string;
+  sessionTitle: string;
+  timestamp: string;
+  content: string;
 }
 
 const getDisplayName = (f: string) => { const p = f.split('-'); return p.length > 2 ? p.slice(2).join('-') : f; };
@@ -62,9 +72,25 @@ const SearchPopup: React.FC<{
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  const filteredDocs = q.trim() ? uploads.filter(f => getDisplayName(f.name).toLowerCase().includes(q.toLowerCase())) : [];
-  const filteredChats = q.trim() ? sessions.filter(s => s.title.toLowerCase().includes(q.toLowerCase())) : [];
-  const hasResults = filteredDocs.length > 0 || filteredChats.length > 0;
+  let filteredDocs = q.trim() ? uploads.filter(f => getDisplayName(f.name).toLowerCase().includes(q.toLowerCase())) : [];
+  
+  let filteredChatsTitle = q.trim() ? sessions.filter(s => s.title.toLowerCase().includes(q.toLowerCase())) : [];
+  
+  let filteredChatsContent = q.trim() ? sessions.filter(s => 
+    !filteredChatsTitle.includes(s) && 
+    s.messages.some(m => {
+      const text = Array.isArray(m.content) ? m.content.find(c => c.type === 'text')?.text || '' : m.content;
+      return text.toLowerCase().includes(q.toLowerCase());
+    })
+  ) : [];
+
+  if (q.trim().length > 0 && q.trim().length <= 2) {
+    filteredDocs = filteredDocs.slice(0, 5);
+    filteredChatsTitle = filteredChatsTitle.slice(0, 5);
+    filteredChatsContent = filteredChatsContent.slice(0, Math.max(0, 5 - filteredChatsTitle.length));
+  }
+
+  const hasResults = filteredDocs.length > 0 || filteredChatsTitle.length > 0 || filteredChatsContent.length > 0;
 
   const bg = dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200';
   const sub = dark ? 'text-gray-500' : 'text-slate-400';
@@ -123,10 +149,10 @@ const SearchPopup: React.FC<{
             </div>
           )}
 
-          {filteredChats.length > 0 && (
+          {(filteredChatsTitle.length > 0 || filteredChatsContent.length > 0) && (
             <div className="py-2">
               <p className={`text-[10px] font-bold uppercase tracking-widest px-4 py-1.5 ${label}`}>Chats</p>
-              {filteredChats.map((s) => (
+              {filteredChatsTitle.map((s) => (
                 <button key={s.id}
                   onClick={() => { onSelectChat(s.id); onClose(); }}
                   className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left ${hov}`}>
@@ -138,6 +164,22 @@ const SearchPopup: React.FC<{
                       <Highlight text={s.title} query={q} dark={dark} />
                     </p>
                     <p className={`text-[10px] ${sub}`}>Chat · {new Date(s.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}</p>
+                  </div>
+                  <MessageSquare size={13} className="text-blue-500 shrink-0" />
+                </button>
+              ))}
+              {filteredChatsContent.map((s) => (
+                <button key={s.id}
+                  onClick={() => { onSelectChat(s.id); onClose(); }}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left ${hov}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${dark ? 'bg-gray-700' : 'bg-slate-100'}`}>
+                    <MessageSquare size={14} className={dark ? 'text-gray-400' : 'text-slate-500'} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm truncate ${dark ? 'text-gray-200' : 'text-slate-700'}`}>
+                      {s.title}
+                    </p>
+                    <p className={`text-[10px] font-semibold text-blue-500 mt-0.5`}>Found in conversation</p>
                   </div>
                   <MessageSquare size={13} className="text-blue-500 shrink-0" />
                 </button>
@@ -204,6 +246,67 @@ export const QRPopup: React.FC<{
     </div>
   </div>
 );
+
+// ── Bookmark Modal ────────────────────────────────────────────────────────────
+const BookmarkModal: React.FC<{
+  dark: boolean;
+  bookmarks: BookmarkType[];
+  onDelete: (id: string) => void;
+  onClose: () => void;
+}> = ({ dark, bookmarks, onDelete, onClose }) => {
+  const [q, setQ] = useState('');
+  const sub = dark ? 'text-gray-400' : 'text-slate-500';
+  const filtered = bookmarks.filter(b => b.content.toLowerCase().includes(q.toLowerCase()) || b.sessionTitle.toLowerCase().includes(q.toLowerCase()));
+  
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className={`relative z-10 w-full max-w-2xl rounded-3xl shadow-2xl border flex flex-col ${dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-slate-200'}`} style={{ maxHeight: '85vh' }}>
+        <div className={`flex items-center justify-between px-6 py-4 border-b shrink-0 ${dark ? 'border-gray-700' : 'border-slate-100'}`}>
+          <div className="flex items-center gap-2">
+            <Bookmark size={18} className="text-blue-500" />
+            <h3 className={`font-bold text-base ${dark ? 'text-white' : 'text-slate-800'}`}>Bookmarks{bookmarks.length > 0 && <span className={`ml-2 text-sm font-normal ${sub}`}>({bookmarks.length})</span>}</h3>
+          </div>
+          <button onClick={onClose} className={`p-1.5 rounded-full transition-colors ${dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-slate-100 text-slate-500'}`}><X size={16} /></button>
+        </div>
+        <div className="px-6 py-4 shrink-0">
+          <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border ${dark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+            <Search size={16} className={sub} />
+            <input type="text" placeholder="Search bookmarks…" value={q} onChange={e => setQ(e.target.value)} className="w-full bg-transparent outline-none text-sm placeholder-opacity-50" />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 text-center">
+              <BookmarkPlus size={40} className={`mb-3 opacity-20 ${sub}`} />
+              <p className={`text-sm font-medium ${sub}`}>{bookmarks.length === 0 ? 'No bookmarks yet. Like a response to save it here.' : 'No bookmarks found matching your search.'}</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map(b => (
+                <div key={b.id} className={`p-4 rounded-2xl border ${dark ? 'bg-gray-800/50 border-gray-700' : 'bg-slate-50 border-slate-100'} group relative`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare size={12} className={sub} />
+                      <span className={`text-[11px] font-bold ${dark ? 'text-gray-300' : 'text-slate-600'}`}>{b.sessionTitle}</span>
+                      <span className={`text-[10px] ${sub}`}>· {new Date(b.timestamp).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <button onClick={() => onDelete(b.id)} className={`p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity ${dark ? 'text-red-400 hover:bg-gray-700' : 'text-red-500 hover:bg-slate-200'}`} title="Remove bookmark">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <p className={`text-sm line-clamp-3 leading-relaxed ${dark ? 'text-gray-200' : 'text-slate-700'}`}>
+                    <Highlight text={b.content} query={q} dark={dark} />
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ── Library Modal ─────────────────────────────────────────────────────────────
 const LibraryModal: React.FC<{
@@ -477,12 +580,13 @@ const Sidebar: React.FC<SidebarProps> = ({
   qrCodeDataUrl, serverInfo,
   uploads, isUploading, uploadProgress, onUploadClick, onDrop, onDeleteUpload,
   sessions, activeChatId, onNewChat, onSelectChat, onDeleteChat, onRenameChat, onPinChat,
-  onClearAllChats, onClearAllUploads,
+  onClearAllChats, onClearAllUploads, bookmarks, onDeleteBookmark
 }) => {
   const [showQR, setShowQR] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
+  const [showBookmarks, setShowBookmarks] = useState(false);
 
   const railBg = dark ? 'bg-gray-900 border-gray-700/60' : 'bg-white border-slate-200';
   const panelBg = dark ? 'bg-gray-900' : 'bg-white';
@@ -500,6 +604,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <button onClick={onOpen} className={railBtn()} title="Open sidebar"><PanelLeftOpen size={18} /></button>
           <button onClick={() => setShowQR(true)} className={railBtn()} title="Connect Device"><QrCode size={18} /></button>
           <button onClick={() => setShowLibrary(true)} className={railBtn()} title="Document Library"><Grid3X3 size={18} /></button>
+          <button onClick={() => setShowBookmarks(true)} className={railBtn()} title="Bookmarks"><Bookmark size={18} /></button>
           <button onClick={() => setShowUsage(true)} className={railBtn()} title="Usage"><BarChart2 size={18} /></button>
           <button onClick={onNewChat} className={railBtn()} title="New Chat"><Plus size={18} /></button>
         </div>
@@ -533,6 +638,11 @@ const Sidebar: React.FC<SidebarProps> = ({
             <button onClick={() => setShowLibrary(true)} className={menuItem}>
               <FolderOpen size={14} className="text-blue-500" />Document Library
               {uploads.length > 0 && <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${dark ? 'bg-gray-700 text-gray-400' : 'bg-slate-100 text-slate-500'}`}>{uploads.length}</span>}
+            </button>
+
+            {/* Bookmarks */}
+            <button onClick={() => setShowBookmarks(true)} className={menuItem}>
+              <Bookmark size={14} className="text-blue-500" />Bookmarks
             </button>
 
             {/* Usage */}
@@ -572,6 +682,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {showLibrary && <LibraryModal dark={dark} uploads={uploads} isUploading={isUploading} uploadProgress={uploadProgress} onUploadClick={onUploadClick} onDrop={onDrop} onDelete={onDeleteUpload} onClose={() => setShowLibrary(false)} />}
       {showSearch && <SearchPopup dark={dark} uploads={uploads} sessions={sessions} onSelectChat={(id) => { onSelectChat(id); setShowSearch(false); }} onClose={() => setShowSearch(false)} />}
       {showUsage && <UsagePopup dark={dark} sessions={sessions} onClearAllChats={onClearAllChats} onClearAllUploads={onClearAllUploads} onClose={() => setShowUsage(false)} />}
+      {showBookmarks && <BookmarkModal dark={dark} bookmarks={bookmarks} onDelete={onDeleteBookmark} onClose={() => setShowBookmarks(false)} />}
     </>
   );
 };

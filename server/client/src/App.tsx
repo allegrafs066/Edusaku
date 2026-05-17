@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import QRCode from 'qrcode';
 import { Sun, Moon } from 'lucide-react';
-import Sidebar from './Sidebar';
+import Sidebar, { BookmarkType } from './Sidebar';
 import ChatArea, { Message } from './ChatArea';
 import Onboarding from './Onboarding';
 
@@ -26,7 +26,12 @@ export interface ChatSession {
 
 const SESSIONS_KEY = 'edusaku-sessions';
 const ACTIVE_KEY   = 'edusaku-active-chat';
+const BOOKMARKS_KEY = 'edusaku-bookmarks';
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+function loadBookmarks(): BookmarkType[] {
+  try { return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || '[]'); } catch { return []; }
+}
 
 function loadSessions(): ChatSession[] {
   try {
@@ -144,15 +149,27 @@ const App: React.FC = () => {
     }
   };
 
+  const [pendingImage, setPendingImage] = useState<{ base64: string; name: string } | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const processFileOrImage = (file: File) => {
+    if (file.type.startsWith('image/')) {
+      setToastMessage("Image vision is coming soon. To analyze images, upload them to the Document Library for OCR processing.");
+      setTimeout(() => setToastMessage(null), 4000);
+    } else {
+      uploadFile(file);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) uploadFile(file);
+    if (file) processFileOrImage(file);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
-    if (file) uploadFile(file);
+    if (file) processFileOrImage(file);
   };
 
   const handleDeleteUpload = async (filename: string) => {
@@ -177,6 +194,13 @@ const App: React.FC = () => {
   useEffect(() => {
     if (activeChatId) localStorage.setItem(ACTIVE_KEY, activeChatId);
   }, [activeChatId]);
+
+  const [bookmarks, setBookmarks] = useState<BookmarkType[]>(() => loadBookmarks());
+  useEffect(() => { localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bookmarks)); }, [bookmarks]);
+
+  const handleDeleteBookmark = (id: string) => {
+    setBookmarks(prev => prev.filter(b => b.id !== id));
+  };
 
   const sortedSessions = sortSessions(sessions);
   const activeSession = sessions.find(s => s.id === activeChatId) ?? null;
@@ -236,28 +260,63 @@ const App: React.FC = () => {
   const [isChatting, setIsChatting] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
 
-  const handleRetry = useCallback(async () => {
-    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
-    if (!lastUserMsg || isChatting || !activeChatId) return;
+  const handleEditMessage = useCallback((idx: number) => {
+    if (isChatting || !activeChatId) return;
+    const session = sessions.find(s => s.id === activeChatId);
+    if (!session) return;
+    const msg = session.messages[idx];
+    if (msg.role !== 'user') return;
+    
+    const contentText = Array.isArray(msg.content) ? msg.content.find(c => c.type === 'text')?.text || '' : msg.content;
+    setInput(contentText);
+    
     setSessions(prev => prev.map(s =>
-      s.id === activeChatId ? { ...s, messages: s.messages.slice(0, -1) } : s
+      s.id === activeChatId ? { ...s, messages: s.messages.slice(0, idx) } : s
     ));
-    setInput(lastUserMsg.content);
-  }, [messages, isChatting, activeChatId]);
+  }, [sessions, isChatting, activeChatId]);
 
-  const handleSend = async (attachedFile: File | null) => {
-    if ((!input.trim() && !attachedFile) || isChatting || !activeChatId) return;
+  const handleRetryMessage = useCallback((idx: number) => {
+    if (isChatting || !activeChatId) return;
+    const session = sessions.find(s => s.id === activeChatId);
+    if (!session) return;
     
-    const fileAttachmentName = attachedFile ? attachedFile.name : '';
-    const userText = input.trim() || `I've uploaded a document for you to analyze.`;
+    const messagesToKeep = session.messages.slice(0, idx);
+    const msgToRetry = session.messages[idx];
     
-    setInput('');
+    setSessions(prev => prev.map(s =>
+      s.id === activeChatId ? { ...s, messages: messagesToKeep } : s
+    ));
+
+    const textContent = Array.isArray(msgToRetry.content) ? msgToRetry.content.find(c => c.type === 'text')?.text || '' : msgToRetry.content;
+    setInput(textContent);
+    setTimeout(() => {
+      _sendMessage(textContent, null);
+    }, 0);
+  }, [sessions, isChatting, activeChatId]);
+
+
+  const _sendMessage = async (userText: string, attachedImage: { base64: string; name: string } | null) => {
+    if ((!userText && !attachedImage) || isChatting || !activeChatId) return;
+    
+    const isImage = !!attachedImage;
+    let base64Image = attachedImage?.base64 || '';
+    
+    const now = new Date().toISOString();
+    
+    let finalContent: string | any[] = userText;
+    if (isImage && base64Image) {
+      finalContent = [
+        { type: 'image_url', image_url: { url: base64Image } },
+        { type: 'text', text: userText }
+      ];
+    }
+
     const userMsg: Message = { 
       role: 'user', 
-      content: userText,
-      ...(fileAttachmentName ? { fileAttachment: { name: fileAttachmentName, type: 'document' } } : {})
+      content: finalContent,
+      ...(attachedImage?.name ? { fileAttachment: { name: attachedImage.name, type: 'image' } } : {}),
+      timestamp: now
     };
-    const now = new Date().toISOString();
 
     setSessions(prev => prev.map(s =>
       s.id === activeChatId
@@ -265,30 +324,30 @@ const App: React.FC = () => {
         : s
     ));
 
-    if (attachedFile) {
-      await uploadFile(attachedFile);
-    }
+    // Removed isImage PDF upload because it's handled in processFileOrImage
 
     setIsChatting(true);
     setStreamingContent('');
 
     const session = sessions.find(s => s.id === activeChatId);
-    const chatId = activeChatId; // capture for async closures
+    const chatId = activeChatId;
     const isFirstMessage = (session?.messages.length ?? 0) === 0;
     
-    // Explicitly add the new file if it's not yet in the state (since React state updates are async)
-    const availableDocs = Array.from(new Set([...uploads.map(u => u.name), fileAttachmentName])).filter(Boolean);
+    const availableDocs = uploads.map(u => u.name);
     const fileContext = availableDocs.length > 0
       ? `\n\n[Context: The user has the following documents available in their library: ${availableDocs.join(', ')}. You can access their contents if the user asks about them. If the user asks about a document not in this list, inform them it has been removed or is unavailable.]`
       : `\n\n[Context: The user currently has NO documents uploaded in their library. Do not hallucinate any document access.]`;
 
     const chatHistory = [...(session?.messages || []), userMsg];
 
+    let promptText = userText + fileContext;
+    let imagesPayload = isImage && base64Image ? [base64Image] : [];
+
     try {
       const response = await fetch('/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userText + fileContext, history: chatHistory }),
+        body: JSON.stringify({ prompt: promptText, history: chatHistory, images: imagesPayload }),
       });
 
       if (!response.ok || !response.body) throw new Error('Stream request failed');
@@ -318,16 +377,6 @@ const App: React.FC = () => {
         }
       }
 
-      setIsChatting(false);
-      setStreamingContent('');
-      const assistantMsg: Message = { role: 'assistant', content: fullContent || '*(No response)*' };
-      setSessions(prev => prev.map(s =>
-        s.id === chatId
-          ? { ...s, messages: [...s.messages, assistantMsg], lastActivityAt: new Date().toISOString() }
-          : s
-      ));
-
-      // Auto-generate title on first message — use simple /chat (not streaming)
       if (isFirstMessage && fullContent) {
         try {
           const titleRes = await fetch('/chat', {
@@ -341,24 +390,69 @@ const App: React.FC = () => {
           const titleData = await titleRes.json();
           const raw = (titleData.response ?? '').trim();
           const generatedTitle = raw.slice(0, 50) || (userText.length > 40 ? userText.slice(0, 40) + '…' : userText);
-          setSessions(prev => prev.map(s => s.id === chatId ? { ...s, title: generatedTitle } : s));
+          setSessions(prev => prev.map(s => {
+            if (s.id !== chatId) return s;
+            const newMsg: Message = { role: 'assistant', content: fullContent, timestamp: new Date().toISOString() };
+            return {
+              ...s,
+              title: generatedTitle,
+              messages: [...s.messages, newMsg],
+              lastActivityAt: new Date().toISOString()
+            };
+          }));
         } catch {
           const fallback = userText.length > 40 ? userText.slice(0, 40) + '…' : userText;
-          setSessions(prev => prev.map(s => s.id === chatId ? { ...s, title: fallback } : s));
+          setSessions(prev => prev.map(s => {
+            if (s.id !== chatId) return s;
+            const newMsg: Message = { role: 'assistant', content: fullContent, timestamp: new Date().toISOString() };
+            return { ...s, title: fallback, messages: [...s.messages, newMsg], lastActivityAt: new Date().toISOString() };
+          }));
         }
+      } else {
+        const assistantMsg: Message = { role: 'assistant', content: fullContent || '*(No response)*', timestamp: new Date().toISOString() };
+        setSessions(prev => prev.map(s =>
+          s.id === chatId
+            ? { ...s, messages: [...s.messages, assistantMsg], lastActivityAt: new Date().toISOString() }
+            : s
+        ));
       }
-    } catch (err: any) {
-      const errMsg: Message = {
-        role: 'assistant',
-        content: `**Error:** ${err.message || 'AI model is not responding. Make sure Ollama is running.'}`,
-      };
-      setSessions(prev => prev.map(s =>
-        s.id === chatId ? { ...s, messages: [...s.messages, errMsg] } : s
-      ));
+    } catch (error) {
+      console.error(error);
+      const errMsg: Message = { role: 'assistant', content: 'Sorry, I encountered an error. Please check your connection or ensure the local AI server is running.', timestamp: new Date().toISOString() };
+      setSessions(prev => prev.map(s => s.id === chatId ? { ...s, messages: [...s.messages, errMsg] } : s));
+    } finally {
       setIsChatting(false);
       setStreamingContent('');
     }
   };
+
+  const handleSend = () => {
+    const text = input.trim() || (pendingImage ? `I've uploaded an image.` : '');
+    setInput('');
+    _sendMessage(text, pendingImage);
+    setPendingImage(null);
+  };
+
+  const handleLikeMessage = useCallback((msg: Message) => {
+    if (!activeChatId || !activeSession) return;
+    const contentText = Array.isArray(msg.content) ? msg.content.find(c => c.type === 'text')?.text || '' : msg.content;
+    const newBookmark: BookmarkType = {
+      id: uid(),
+      sessionId: activeSession.id,
+      sessionTitle: activeSession.title,
+      timestamp: msg.timestamp || new Date().toISOString(),
+      content: contentText,
+    };
+    setBookmarks(prev => [newBookmark, ...prev]);
+  }, [activeChatId, activeSession]);
+
+  const handleDislikeMessage = useCallback((msg: Message, feedback: any) => {
+    fetch('/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feedback: { ...feedback, messageContent: msg.content } })
+    }).catch(console.error);
+  }, []);
 
   // ── Init ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -410,6 +504,8 @@ const App: React.FC = () => {
           onPinChat={handlePinChat}
           onClearAllChats={handleClearAllChats}
           onClearAllUploads={handleClearAllUploads}
+          bookmarks={bookmarks}
+          onDeleteBookmark={handleDeleteBookmark}
         />
         <main
           className="flex-1 flex flex-col overflow-hidden transition-all duration-300 min-h-0"
@@ -424,13 +520,25 @@ const App: React.FC = () => {
             serverInfo={serverInfo}
             input={input}
             isChatting={isChatting}
+            pendingImage={pendingImage}
+            onClearImage={() => setPendingImage(null)}
+            onImageSelected={processFileOrImage}
             onInputChange={setInput}
             onSend={handleSend}
             sessionTitle={activeSession?.title}
-            onRetry={handleRetry}
+            onRetryMessage={handleRetryMessage}
+            onEditMessage={handleEditMessage}
+            onLikeMessage={handleLikeMessage}
+            onDislikeMessage={handleDislikeMessage}
           />
         </main>
       </div>
+
+      {toastMessage && (
+        <div className={`fixed bottom-6 right-6 z-[200] px-5 py-3 rounded-xl shadow-xl max-w-sm border ${dark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-slate-200 text-slate-700'}`}>
+          <p className="text-sm font-medium leading-relaxed">{toastMessage}</p>
+        </div>
+      )}
     </div>
   );
 };
