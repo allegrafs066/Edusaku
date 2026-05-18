@@ -47,20 +47,6 @@ jobs:
             server/package-lock.json
             electron/package-lock.json
 
-      # ── Download GGUF model from HuggingFace ──────────────────────────────
-      - name: Create models directory
-        run: mkdir -p server/models
-        shell: bash
-
-      - name: Download Gemma 4 GGUF model
-        run: |
-          curl -L "https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf" \
-            -o server/models/gemma4.gguf \
-            --retry 3 \
-            --retry-delay 5
-        shell: bash
-
-      # ── Build the React web client ────────────────────────────────────────
       - name: Install web client dependencies
         working-directory: server/client
         run: npm ci
@@ -71,12 +57,10 @@ jobs:
         env:
           CI: false
 
-      # ── Install server dependencies ───────────────────────────────────────
       - name: Install server dependencies
         working-directory: server
         run: npm ci --omit=dev
 
-      # ── Download bundled Ollama binary ────────────────────────────────────
       - name: Create electron/bin directory
         run: mkdir -p electron/bin
         shell: bash
@@ -90,7 +74,6 @@ jobs:
         run: chmod +x ${{ matrix.ollama_bin }}
         shell: bash
 
-      # ── Build Electron app ────────────────────────────────────────────────
       - name: Install Electron dependencies
         working-directory: electron
         run: npm ci
@@ -102,7 +85,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      # ── Upload to GitHub Release ──────────────────────────────────────────
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
