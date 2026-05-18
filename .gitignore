@@ -85,3 +85,4 @@ server/vector_index/
 electron/bin/ollama-linux
 electron/bin/ollama-win.exe
 electron/bin/ollama-mac
+server/models/gemma4.gguf
