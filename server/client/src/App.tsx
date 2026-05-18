@@ -82,16 +82,26 @@ const App: React.FC = () => {
     localStorage.getItem('edusaku-onboarding-done') !== 'true'
   );
   const [showModelModal, setShowModelModal] = useState(false);
+  const [modelModalStep, setModelModalStep] = useState<1 | 2 | 3>(1);
+
+  const checkAndShowModelModal = async () => {
+    if (localStorage.getItem(MODEL_SKIP_KEY) === 'true') return;
+    try {
+      const { ollamaRunning, modelInstalled } = await fetch('/ollama/status').then(r => r.json());
+      if (!ollamaRunning) {
+        setModelModalStep(1);
+        setShowModelModal(true);
+      } else if (!modelInstalled) {
+        setModelModalStep(2);
+        setShowModelModal(true);
+      }
+    } catch {}
+  };
 
   const handleOnboardingDone = async () => {
     localStorage.setItem('edusaku-onboarding-done', 'true');
     setShowOnboarding(false);
-    if (localStorage.getItem(MODEL_SKIP_KEY) !== 'true') {
-      try {
-        const { modelInstalled } = await fetch('/ollama/status').then(r => r.json());
-        if (!modelInstalled) setShowModelModal(true);
-      } catch {}
-    }
+    await checkAndShowModelModal();
   };
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
@@ -308,10 +318,18 @@ const App: React.FC = () => {
   const _sendMessage = async (userText: string, attachedImage: { base64: string; name: string } | null) => {
     if ((!userText && !attachedImage) || isChatting || !activeChatId) return;
 
-    // Check model availability before sending
+    // Check Ollama + model availability before sending
     try {
-      const { modelInstalled } = await fetch('/ollama/status').then(r => r.json());
-      if (!modelInstalled) { setShowModelModal(true); return; }
+      const { ollamaRunning, modelInstalled } = await fetch('/ollama/status').then(r => r.json());
+      if (!ollamaRunning) {
+        setModelModalStep(1);
+        setShowModelModal(true);
+        return;
+      } else if (!modelInstalled) {
+        setModelModalStep(2);
+        setShowModelModal(true);
+        return;
+      }
     } catch {}
 
     const isImage = !!attachedImage;
@@ -474,15 +492,9 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchServerInfo();
     fetchUploads();
-    // Check model on startup (only if onboarding already done and not previously skipped)
-    if (
-      localStorage.getItem('edusaku-onboarding-done') === 'true' &&
-      localStorage.getItem(MODEL_SKIP_KEY) !== 'true'
-    ) {
-      fetch('/ollama/status')
-        .then(r => r.json())
-        .then(({ modelInstalled }) => { if (!modelInstalled) setShowModelModal(true); })
-        .catch(() => {});
+    // Check Ollama + model on startup (only if onboarding already done)
+    if (localStorage.getItem('edusaku-onboarding-done') === 'true') {
+      checkAndShowModelModal();
     }
     const interval = setInterval(fetchUploads, 8000);
     return () => clearInterval(interval);
@@ -493,7 +505,7 @@ const App: React.FC = () => {
   return (
     <div className={`h-screen flex flex-col ${appBg} transition-colors duration-200`}>
       {showOnboarding && <Onboarding dark={dark} onDone={handleOnboardingDone} />}
-      {showModelModal && <ModelInstallModal dark={dark} onClose={() => setShowModelModal(false)} />}
+      {showModelModal && <ModelInstallModal dark={dark} onClose={() => setShowModelModal(false)} initialStep={modelModalStep} />}
 
       <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
 

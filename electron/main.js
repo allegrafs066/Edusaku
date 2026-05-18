@@ -1,9 +1,10 @@
 'use strict';
 
-const { app, BrowserWindow, utilityProcess, dialog } = require('electron');
+const { app, BrowserWindow, utilityProcess, dialog, ipcMain, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 let serverProcess = null;
 let mainWindow = null;
@@ -189,6 +190,44 @@ function pollServer(maxAttempts, intervalMs) {
     setTimeout(attempt, intervalMs);
   });
 }
+
+// ── IPC handlers ─────────────────────────────────────────────────────────────
+
+ipcMain.handle('open-external', (_event, url) => {
+  shell.openExternal(url);
+});
+
+ipcMain.handle('open-terminal', () => {
+  const pullCmd = 'ollama pull gemma4:e2b';
+  if (process.platform === 'win32') {
+    const psCmd = `Start-Process powershell -ArgumentList '-NoExit','-Command','Write-Host "Run this command:" -ForegroundColor Cyan; Write-Host "${pullCmd}" -ForegroundColor Yellow; ${pullCmd}'`;
+    const proc = spawn('powershell', ['-NoProfile', '-Command', psCmd], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    proc.unref();
+  } else if (process.platform === 'darwin') {
+    const script = `tell application "Terminal"\n  activate\n  do script "${pullCmd}"\nend tell`;
+    const proc = spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore' });
+    proc.unref();
+  } else {
+    // Linux: try common terminal emulators in order
+    const tryNext = (index) => {
+      const terminals = [
+        ['x-terminal-emulator', ['-e', `bash -c '${pullCmd}; exec bash'`]],
+        ['gnome-terminal', ['--', 'bash', '-c', `${pullCmd}; exec bash`]],
+        ['xterm', ['-e', `bash -c '${pullCmd}; exec bash'`]],
+      ];
+      if (index >= terminals.length) return;
+      const [term, args] = terminals[index];
+      const proc = spawn(term, args, { detached: true, stdio: 'ignore' });
+      proc.on('error', () => tryNext(index + 1));
+      proc.unref();
+    };
+    tryNext(0);
+  }
+});
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 

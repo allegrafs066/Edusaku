@@ -1,163 +1,267 @@
 import React, { useEffect, useState } from 'react';
-import { Download, Bot } from 'lucide-react';
+import {
+  CheckCircle, AlertTriangle, XCircle, Download, Terminal,
+  ExternalLink, Copy, Check,
+} from 'lucide-react';
 
 export const MODEL_SKIP_KEY = 'edusaku-model-install-skipped';
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      openExternal: (url: string) => Promise<void>;
+      openTerminal: () => Promise<void>;
+    };
+  }
+}
 
 interface ModelInstallModalProps {
   dark: boolean;
   onClose: () => void;
+  initialStep?: 1 | 2 | 3;
 }
 
-type Phase = 'prompt' | 'installing' | 'skip-confirm';
+type Step = 1 | 2 | 3;
 
-const ModelInstallModal: React.FC<ModelInstallModalProps> = ({ dark, onClose }) => {
-  const [phase, setPhase] = useState<Phase>('prompt');
-  const [progressText, setProgressText] = useState('');
-  const [installDone, setInstallDone] = useState(false);
-  const [installFailed, setInstallFailed] = useState(false);
-  const [dots, setDots] = useState('');
+const OLLAMA_URL = 'https://ollama.com/download';
+const PULL_CMD = 'ollama pull gemma4:e2b';
+
+const ModelInstallModal: React.FC<ModelInstallModalProps> = ({ dark, onClose, initialStep = 1 }) => {
+  const [step, setStep] = useState<Step>(initialStep);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const isWindows = /windows/i.test(navigator.userAgent);
 
   useEffect(() => {
-    if (phase !== 'installing' || installDone) return;
-    const iv = setInterval(() => setDots(d => d.length >= 3 ? '' : d + '.'), 400);
-    return () => clearInterval(iv);
-  }, [phase, installDone]);
+    if (step !== 3) return;
+    const t = setTimeout(() => onClose(), 2000);
+    return () => clearTimeout(t);
+  }, [step, onClose]);
 
-  const handleInstall = async () => {
-    setPhase('installing');
-    setProgressText('Connecting to Ollama');
+  const checkStatus = async () => {
+    setChecking(true);
+    setError('');
     try {
-      const response = await fetch('/ollama/install', { method: 'POST' });
-      if (!response.body) return;
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done: streamDone, value } = await reader.read();
-        if (streamDone) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const parsed = JSON.parse(line.slice(6));
-            if (parsed.text) setProgressText(parsed.text);
-            if (parsed.done) {
-              setInstallDone(true);
-              if (parsed.success) {
-                setTimeout(() => onClose(), 1500);
-              } else {
-                setInstallFailed(true);
-              }
-            }
-          } catch {}
-        }
-      }
+      const res = await fetch('/ollama/status').then(r => r.json());
+      return res as { ollamaRunning: boolean; modelInstalled: boolean };
     } catch {
-      setProgressText('Installation failed. Run manually: ollama pull gemma4:e2b');
-      setInstallDone(true);
-      setInstallFailed(true);
+      return { ollamaRunning: false, modelInstalled: false };
+    } finally {
+      setChecking(false);
     }
   };
 
+  const handleCheckOllama = async () => {
+    const status = await checkStatus();
+    if (status.ollamaRunning) {
+      setStep(2);
+    } else {
+      setError('Ollama not detected yet. Please install and try again.');
+    }
+  };
+
+  const handleCheckModel = async () => {
+    const status = await checkStatus();
+    if (status.modelInstalled) {
+      setStep(3);
+    } else {
+      setError('Model not detected yet. Please run the command and try again.');
+    }
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(PULL_CMD);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = PULL_CMD;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const openExternal = () => {
+    if (window.electronAPI?.openExternal) {
+      window.electronAPI.openExternal(OLLAMA_URL);
+    } else {
+      window.open(OLLAMA_URL, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const openTerminal = () => {
+    window.electronAPI?.openTerminal();
+  };
+
+  // ── Theme ────────────────────────────────────────────────────────────────────
   const cardBg = dark ? 'bg-gray-900 border-gray-700/60' : 'bg-white border-slate-200';
   const titleColor = dark ? 'text-white' : 'text-slate-800';
   const descColor = dark ? 'text-gray-400' : 'text-slate-500';
+  const helperColor = dark ? 'text-gray-500' : 'text-slate-400';
+  const boxBg = dark ? 'bg-gray-800 border-gray-700' : 'bg-slate-50 border-slate-200';
+  const boxText = dark ? 'text-gray-300' : 'text-slate-600';
+  const iconMuted = dark ? 'text-gray-500' : 'text-slate-400';
+
+  const primaryBtn = `w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60
+    text-white font-semibold transition-colors shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2`;
+  const outlineBtn = dark
+    ? `w-full py-3 rounded-2xl bg-gray-800 hover:bg-gray-700 text-gray-200 font-semibold
+       transition-colors border border-gray-700 flex items-center justify-center gap-2`
+    : `w-full py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold
+       transition-colors border border-slate-200 flex items-center justify-center gap-2`;
+
+  const stepDot = (n: number) => (
+    <div
+      key={n}
+      className={`h-2 rounded-full transition-all duration-300 ${
+        n === step
+          ? 'w-6 bg-blue-600'
+          : n < step
+          ? 'w-2 bg-blue-400'
+          : dark ? 'w-2 bg-gray-700' : 'w-2 bg-slate-200'
+      }`}
+    />
+  );
+
+  const errorBox = error ? (
+    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 mb-3">
+      <XCircle size={16} className="text-red-500 shrink-0" />
+      <p className="text-sm text-red-500">{error}</p>
+    </div>
+  ) : null;
 
   return (
     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className={`relative w-full max-w-md mx-4 rounded-3xl border shadow-2xl ${cardBg}`}>
-        <div className="px-8 pt-10 pb-8">
+        <div className="px-8 pt-8 pb-8">
 
-          {/* Icon */}
-          <div className="flex items-center justify-center mb-6">
-            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg ${
-              installDone && !installFailed ? 'bg-green-600 shadow-green-600/30' : 'bg-blue-600 shadow-blue-600/30'
-            }`}>
-              {phase === 'installing' && installDone
-                ? <Bot size={28} className="text-white" />
-                : <Download size={28} className="text-white" />}
-            </div>
+          {/* Step indicator */}
+          <div className="flex items-center justify-center gap-2 mb-8">
+            {[1, 2, 3].map(stepDot)}
           </div>
 
-          {phase === 'prompt' && (
+          {/* ── Step 1 ─────────────────────────────────────────────────────── */}
+          {step === 1 && (
             <>
-              <h2 className={`text-xl font-bold text-center mb-3 ${titleColor}`}>
-                Model Required
-              </h2>
-              <p className={`text-sm text-center mb-8 leading-relaxed ${descColor}`}>
-                Gemma 4 model is required to run Edusaku. The model will be downloaded via Ollama.
-              </p>
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={handleInstall}
-                  className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-colors shadow-lg shadow-blue-600/25"
-                >
-                  Install Model
-                </button>
-                <button
-                  onClick={() => setPhase('skip-confirm')}
-                  className={`w-full py-3 rounded-2xl font-medium transition-colors ${
-                    dark ? 'text-gray-400 hover:bg-gray-800' : 'text-slate-500 hover:bg-slate-100'
-                  }`}
-                >
-                  Skip
-                </button>
-              </div>
-            </>
-          )}
-
-          {phase === 'installing' && (
-            <>
-              <h2 className={`text-xl font-bold text-center mb-3 ${titleColor}`}>
-                {installDone ? (installFailed ? 'Installation Failed' : 'Model Installed!') : 'Installing Model'}
-              </h2>
-              <p className={`text-sm text-center mb-6 font-mono leading-relaxed min-h-[3rem] break-all ${descColor}`}>
-                {installDone
-                  ? (installFailed ? progressText : 'Gemma 4 is ready. Starting Edusaku…')
-                  : (progressText || 'Starting') + dots}
-              </p>
-              {!installDone && (
-                <div className={`w-full h-1.5 rounded-full overflow-hidden ${dark ? 'bg-gray-800' : 'bg-slate-100'}`}>
-                  <div className="h-full bg-blue-600 rounded-full animate-pulse" style={{ width: '65%' }} />
+              <div className="flex items-center justify-center mb-5">
+                <div className="w-14 h-14 rounded-2xl bg-blue-600 shadow-lg shadow-blue-600/30 flex items-center justify-center">
+                  <Download size={24} className="text-white" />
                 </div>
-              )}
-              {installDone && installFailed && (
-                <button
-                  onClick={() => { setPhase('prompt'); setInstallDone(false); setInstallFailed(false); setProgressText(''); }}
-                  className="mt-4 w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-colors shadow-lg shadow-blue-600/25"
-                >
-                  Try Again
-                </button>
-              )}
+              </div>
+
+              <h2 className={`text-xl font-bold text-center mb-3 ${titleColor}`}>
+                Step 1: Install Ollama
+              </h2>
+              <p className={`text-sm text-center mb-5 leading-relaxed ${descColor}`}>
+                Ollama is required to run Gemma 4 AI locally on your PC. It is free and runs in the background automatically after installation.
+              </p>
+
+              <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border mb-3 ${boxBg}`}>
+                <ExternalLink size={16} className={`${iconMuted} shrink-0`} />
+                <span className={`text-sm font-mono flex-1 ${boxText}`}>{OLLAMA_URL}</span>
+              </div>
+
+              <button onClick={openExternal} className={`${outlineBtn} mb-3`}>
+                <ExternalLink size={16} />
+                Open Download Page
+              </button>
+
+              <p className={`text-xs text-center mb-5 leading-relaxed ${helperColor}`}>
+                After installing, Ollama runs automatically in the background. No need to open a terminal.
+              </p>
+
+              {errorBox}
+
+              <button onClick={handleCheckOllama} disabled={checking} className={primaryBtn}>
+                {checking ? 'Checking...' : "I've Installed Ollama →"}
+              </button>
             </>
           )}
 
-          {phase === 'skip-confirm' && (
+          {/* ── Step 2 ─────────────────────────────────────────────────────── */}
+          {step === 2 && (
             <>
+              <div className="flex items-center justify-center mb-5">
+                <div className="w-14 h-14 rounded-2xl bg-blue-600 shadow-lg shadow-blue-600/30 flex items-center justify-center">
+                  <Terminal size={24} className="text-white" />
+                </div>
+              </div>
+
               <h2 className={`text-xl font-bold text-center mb-3 ${titleColor}`}>
-                Are you sure?
+                Step 2: Download Gemma 4 Model
               </h2>
-              <p className={`text-sm text-center mb-8 leading-relaxed ${descColor}`}>
-                Without the model, Edusaku AI features won't work. Are you sure you want to skip?
+              <p className={`text-sm text-center mb-5 leading-relaxed ${descColor}`}>
+                The Gemma 4 model (~3.5 GB) needs to be downloaded once. Open a terminal and run the command below.
               </p>
-              <div className="flex flex-col gap-3">
+
+              <button onClick={openTerminal} className={`${outlineBtn} mb-4`}>
+                <Terminal size={16} />
+                {isWindows ? 'Open PowerShell' : 'Open Terminal'}
+              </button>
+
+              <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border mb-2 ${boxBg}`}>
+                <code className={`text-sm font-mono flex-1 ${dark ? 'text-green-400' : 'text-slate-700'}`}>
+                  {PULL_CMD}
+                </code>
                 <button
-                  onClick={() => { localStorage.setItem(MODEL_SKIP_KEY, 'true'); onClose(); }}
-                  className={`w-full py-3 rounded-2xl font-semibold transition-colors ${
-                    dark ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  onClick={handleCopy}
+                  title="Copy command"
+                  className={`shrink-0 p-1.5 rounded-lg transition-colors ${
+                    dark
+                      ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-200'
+                      : 'hover:bg-slate-200 text-slate-400 hover:text-slate-600'
                   }`}
                 >
-                  Yes, skip
-                </button>
-                <button
-                  onClick={() => setPhase('prompt')}
-                  className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-colors shadow-lg shadow-blue-600/25"
-                >
-                  Cancel
+                  {copied
+                    ? <Check size={16} className="text-green-500" />
+                    : <Copy size={16} />}
                 </button>
               </div>
+
+              <div className="flex items-start gap-2 mb-5">
+                <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                <p className={`text-xs leading-relaxed ${helperColor}`}>
+                  Do not delete or modify the command above. Just press Enter to start downloading.
+                </p>
+              </div>
+
+              {errorBox}
+
+              <button onClick={handleCheckModel} disabled={checking} className={primaryBtn}>
+                {checking ? 'Checking...' : "I've Downloaded the Model →"}
+              </button>
+            </>
+          )}
+
+          {/* ── Step 3 ─────────────────────────────────────────────────────── */}
+          {step === 3 && (
+            <>
+              <div className="flex items-center justify-center mb-5">
+                <div className="w-14 h-14 rounded-2xl bg-green-600 shadow-lg shadow-green-600/30 flex items-center justify-center">
+                  <CheckCircle size={28} className="text-white" />
+                </div>
+              </div>
+
+              <h2 className={`text-xl font-bold text-center mb-3 ${titleColor}`}>
+                Edusaku is Ready!
+              </h2>
+              <p className={`text-sm text-center mb-8 leading-relaxed ${descColor}`}>
+                Gemma 4 is installed and running locally on your device. Your data never leaves your PC.
+              </p>
+
+              <button onClick={onClose} className={primaryBtn}>
+                <CheckCircle size={16} />
+                Start Learning
+              </button>
+
+              <p className={`text-xs text-center mt-3 ${helperColor}`}>
+                Closing automatically in a moment...
+              </p>
             </>
           )}
 
