@@ -24,8 +24,9 @@ build-linux:
     - cd ../electron && npm ci
     - npx electron-builder --linux --publish never
     - |
+      APPIMAGE=$(ls dist/*.AppImage | head -1)
       curl --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-           --upload-file electron/dist/$(ls electron/dist/*.AppImage | head -1 | xargs basename) \
+           --upload-file "$APPIMAGE" \
            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/edusaku/${CI_COMMIT_TAG}/Edusaku-linux.AppImage"
   artifacts:
     expire_in: 1 day
@@ -50,14 +51,14 @@ build-windows:
     - cd ../electron ; npm ci
     - npx electron-builder --win --publish never
     - |
-      $file = Get-ChildItem electron/dist/*.exe | Select-Object -First 1
+      $file = Get-ChildItem dist/*.zip | Select-Object -First 1
       curl.exe --header "JOB-TOKEN: $env:CI_JOB_TOKEN" `
                --upload-file $file.FullName `
-               "$env:CI_API_V4_URL/projects/$env:CI_PROJECT_ID/packages/generic/edusaku/$env:CI_COMMIT_TAG/Edusaku-windows.exe"
+               "$env:CI_API_V4_URL/projects/$env:CI_PROJECT_ID/packages/generic/edusaku/$env:CI_COMMIT_TAG/Edusaku-windows.zip"
   artifacts:
     expire_in: 1 day
     paths:
-      - electron/dist/*.exe
+      - electron/dist/*.zip
 
 build-mac:
   stage: build
@@ -75,8 +76,9 @@ build-mac:
     - cd ../electron && npm ci
     - npx electron-builder --mac --config.mac.identity=null --publish never
     - |
+      DMG=$(ls dist/*.dmg | head -1)
       curl --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-           --upload-file electron/dist/$(ls electron/dist/*.dmg | head -1 | xargs basename) \
+           --upload-file "$DMG" \
            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/edusaku/${CI_COMMIT_TAG}/Edusaku-mac.dmg"
   allow_failure: true
   artifacts:
@@ -107,6 +109,6 @@ release:
         - name: "Edusaku Linux (AppImage)"
           url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/edusaku/${CI_COMMIT_TAG}/Edusaku-linux.AppImage"
           link_type: package
-        - name: "Edusaku Windows (Installer)"
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/edusaku/${CI_COMMIT_TAG}/Edusaku-windows.exe"
+        - name: "Edusaku Windows (ZIP)"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/edusaku/${CI_COMMIT_TAG}/Edusaku-windows.zip"
           link_type: package
