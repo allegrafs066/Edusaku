@@ -23,7 +23,6 @@ build-linux:
     - apt-get update -qq && apt-get install -y -qq curl
   script:
     - mkdir -p server/models
-    - echo "Downloading GGUF model..."
     - curl -L "https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf"
         -o server/models/gemma4.gguf --retry 3 --retry-delay 5
     - cd server/client && npm ci
@@ -31,10 +30,6 @@ build-linux:
     - cd ../.. && cd server && npm ci --omit=dev
     - cd ../electron && npm ci
     - npx electron-builder --linux
-      --config.extraResources.0.from=../server
-      --config.extraResources.0.to=server
-  environment:
-    name: production
 
 build-windows:
   <<: *build_template
@@ -51,7 +46,6 @@ build-windows:
     - cd ../.. ; cd server ; npm ci --omit=dev
     - cd ../electron ; npm ci
     - npx electron-builder --win
-  shell: powershell
 
 build-mac:
   <<: *build_template
@@ -65,8 +59,7 @@ build-mac:
     - CI=false npm run build
     - cd ../.. && cd server && npm ci --omit=dev
     - cd ../electron && npm ci
-    - npx electron-builder --mac
-      --config.mac.identity=null
+    - npx electron-builder --mac --config.mac.identity=null
   allow_failure: true
 
 release:
