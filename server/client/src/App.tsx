@@ -4,6 +4,7 @@ import { Sun, Moon } from 'lucide-react';
 import Sidebar, { BookmarkType } from './Sidebar';
 import ChatArea, { Message } from './ChatArea';
 import Onboarding from './Onboarding';
+import ModelInstallModal, { MODEL_SKIP_KEY } from './ModelInstallModal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -80,9 +81,17 @@ const App: React.FC = () => {
   const [showOnboarding, setShowOnboarding] = useState(() =>
     localStorage.getItem('edusaku-onboarding-done') !== 'true'
   );
-  const handleOnboardingDone = () => {
+  const [showModelModal, setShowModelModal] = useState(false);
+
+  const handleOnboardingDone = async () => {
     localStorage.setItem('edusaku-onboarding-done', 'true');
     setShowOnboarding(false);
+    if (localStorage.getItem(MODEL_SKIP_KEY) !== 'true') {
+      try {
+        const { modelInstalled } = await fetch('/ollama/status').then(r => r.json());
+        if (!modelInstalled) setShowModelModal(true);
+      } catch {}
+    }
   };
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
@@ -298,7 +307,13 @@ const App: React.FC = () => {
 
   const _sendMessage = async (userText: string, attachedImage: { base64: string; name: string } | null) => {
     if ((!userText && !attachedImage) || isChatting || !activeChatId) return;
-    
+
+    // Check model availability before sending
+    try {
+      const { modelInstalled } = await fetch('/ollama/status').then(r => r.json());
+      if (!modelInstalled) { setShowModelModal(true); return; }
+    } catch {}
+
     const isImage = !!attachedImage;
     let base64Image = attachedImage?.base64 || '';
     
@@ -459,6 +474,16 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchServerInfo();
     fetchUploads();
+    // Check model on startup (only if onboarding already done and not previously skipped)
+    if (
+      localStorage.getItem('edusaku-onboarding-done') === 'true' &&
+      localStorage.getItem(MODEL_SKIP_KEY) !== 'true'
+    ) {
+      fetch('/ollama/status')
+        .then(r => r.json())
+        .then(({ modelInstalled }) => { if (!modelInstalled) setShowModelModal(true); })
+        .catch(() => {});
+    }
     const interval = setInterval(fetchUploads, 8000);
     return () => clearInterval(interval);
   }, [fetchServerInfo, fetchUploads]);
@@ -468,6 +493,7 @@ const App: React.FC = () => {
   return (
     <div className={`h-screen flex flex-col ${appBg} transition-colors duration-200`}>
       {showOnboarding && <Onboarding dark={dark} onDone={handleOnboardingDone} />}
+      {showModelModal && <ModelInstallModal dark={dark} onClose={() => setShowModelModal(false)} />}
 
       <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
 
