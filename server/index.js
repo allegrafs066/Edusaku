@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 
 const { indexFile, deleteFileFromIndex, buildRAGPrompt, getIndexStatus, cleanOrphanChunks, clearIndex } = require('./rag');
 
@@ -397,6 +397,56 @@ app.post('/feedback', express.json({ limit: '50mb' }), (req, res) => {
         res.status(500).json({ error: 'Failed to save feedback' });
     }
 });
+// Ollama status — checks if Ollama is running and if gemma4:e2b is installed
+app.get('/ollama/status', async (req, res) => {
+    let ollamaRunning = false;
+    let modelInstalled = false;
+
+    try {
+        await axios.get('http://localhost:11434/', { timeout: 2000 });
+        ollamaRunning = true;
+    } catch (_) {}
+
+    if (ollamaRunning) {
+        try {
+            const output = await new Promise((resolve, reject) => {
+                exec('ollama list', (err, stdout) => err ? reject(err) : resolve(stdout));
+            });
+            modelInstalled = output.includes('gemma4');
+        } catch (_) {}
+    }
+
+    res.json({ ollamaRunning, modelInstalled });
+});
+
+// Ollama install — streams `ollama pull gemma4:e2b` output as SSE
+app.post('/ollama/install', (req, res) => {
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+    });
+
+    const proc = spawn('ollama', ['pull', 'gemma4:e2b']);
+
+    const sendLines = (data) => {
+        const lines = data.toString().split(/[\r\n]+/).filter(l => l.trim());
+        const last = lines[lines.length - 1];
+        if (last) res.write(`data: ${JSON.stringify({ text: last })}\n\n`);
+    };
+
+    proc.stdout.on('data', sendLines);
+    proc.stderr.on('data', sendLines);
+
+    proc.on('close', (code) => {
+        res.write(`data: ${JSON.stringify({ done: true, success: code === 0 })}\n\n`);
+        res.end();
+    });
+
+    req.on('close', () => proc.kill());
+});
+
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'client/build/index.html'));
 });
