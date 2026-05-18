@@ -29,23 +29,21 @@ build-linux:
     - CI=false npm run build
     - cd ../.. && cd server && npm ci --omit=dev
     - cd ../electron && npm ci
-    - npx electron-builder --linux
+    - npx electron-builder --linux --publish never
 
 build-windows:
   <<: *build_template
   tags:
     - saas-windows-medium-amd64
-  before_script:
-    - choco install curl -y
   script:
     - mkdir -Force server/models
-    - curl -L "https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf"
+    - curl.exe -L "https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf"
         -o server/models/gemma4.gguf
     - cd server/client ; npm ci
     - $env:CI="false" ; npm run build
     - cd ../.. ; cd server ; npm ci --omit=dev
     - cd ../electron ; npm ci
-    - npx electron-builder --win
+    - npx electron-builder --win --publish never
 
 build-mac:
   <<: *build_template
@@ -59,7 +57,7 @@ build-mac:
     - CI=false npm run build
     - cd ../.. && cd server && npm ci --omit=dev
     - cd ../electron && npm ci
-    - npx electron-builder --mac --config.mac.identity=null
+    - npx electron-builder --mac --config.mac.identity=null --publish never
   allow_failure: true
 
 release:
